@@ -157,7 +157,12 @@ body {
 
 .dashboard-categoria-chart-wrap {
   position: relative;
-  min-height: 220px;
+  min-height: 140px;
+}
+
+.dashboard-empleado-chart-wrap {
+  position: relative;
+  min-height: 160px;
 }
 
 @media (max-width: 991.98px) {

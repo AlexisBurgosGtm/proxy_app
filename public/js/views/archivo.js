@@ -5,6 +5,9 @@ import { formatDate, formatImporte } from '../format.js';
 import { statusBadge, renderTicketDetailHtml, bindPhotoZoom } from '../components/ticket-detail.js';
 import { exportRowsToExcel } from '../export-excel.js';
 
+const TIPO_TICKETS = 'TICKETS';
+const TIPO_ORDENES = 'ORDENES';
+
 function pad(n) {
   return String(n).padStart(2, '0');
 }
@@ -30,7 +33,7 @@ function statusLabel(status) {
   return status === 'FINALIZADO' ? 'Finalizado' : 'Pendiente';
 }
 
-function matchesSearch(ticket, query) {
+function matchesTicketSearch(ticket, query) {
   if (!query) return true;
   const q = query.toLowerCase();
   const haystack = [
@@ -48,32 +51,76 @@ function matchesSearch(ticket, query) {
   return haystack.includes(q);
 }
 
+function matchesOrdenSearch(orden, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const haystack = [
+    orden.fecha,
+    orden.hora,
+    orden.empleado_nombre,
+    orden.desprod,
+    orden.descategoria,
+    orden.importe,
+  ]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+  return haystack.includes(q);
+}
+
+const TICKET_HEADERS = [
+  { key: 'inicio', label: 'Inicio' },
+  { key: 'fin', label: 'Fin' },
+  { key: 'empleado', label: 'Empleado' },
+  { key: 'cliente', label: 'Cliente' },
+  { key: 'reporte', label: 'Reporte cliente' },
+  { key: 'importe', label: 'Importe', align: 'end' },
+  { key: 'status', label: 'Status' },
+  { key: 'acciones', label: 'Acciones', align: 'end' },
+];
+
+const ORDEN_HEADERS = [
+  { key: 'fecha', label: 'Fecha' },
+  { key: 'hora', label: 'Hora' },
+  { key: 'empleado', label: 'Empleado' },
+  { key: 'producto', label: 'Producto' },
+  { key: 'categoria', label: 'Categoría' },
+  { key: 'importe', label: 'Importe', align: 'end' },
+];
+
 export async function renderArchivo(root) {
   updateAppShell('archivo', 'Archivo');
   const { start, end } = monthRange();
+  let tipoTransaccion = TIPO_TICKETS;
   let tickets = [];
+  let ordenes = [];
   let searchQuery = '';
   let detailModal = null;
-  const tableColSpan = 8;
 
   root.innerHTML = `
     <main class="container-fluid py-2 cotizaciones-page">
       <div class="card border-0 shadow-sm">
         <div class="card-header card-header-app py-2">
-          <h2 class="h6 mb-0"><i class="fa-solid fa-box-archive me-2"></i>Archivo de tickets</h2>
+          <h2 class="h6 mb-0"><i class="fa-solid fa-box-archive me-2"></i>Archivo</h2>
         </div>
         <div class="card-body py-2">
           <div id="filtroArchivo" class="mb-2">
             <div class="row g-2 align-items-end">
-              <div class="col-md-4">
+              <div class="col-md-3">
+                <label class="form-label" for="archivoTipoTransaccion">Tipo de transacción</label>
+                <select class="form-select form-select-sm" id="archivoTipoTransaccion">
+                  <option value="${TIPO_TICKETS}">TICKETS</option>
+                  <option value="${TIPO_ORDENES}">ORDENES</option>
+                </select>
+              </div>
+              <div class="col-md-3">
                 <label class="form-label" for="archivoDesde">Desde</label>
                 <input type="date" class="form-control form-control-sm" id="archivoDesde" value="${start}" required>
               </div>
-              <div class="col-md-4">
+              <div class="col-md-3">
                 <label class="form-label" for="archivoHasta">Hasta</label>
                 <input type="date" class="form-control form-control-sm" id="archivoHasta" value="${end}" required>
               </div>
-              <div class="col-md-4">
+              <div class="col-md-3">
                 <h3 class="mb-1 text-danger text-end" id="archivoTotalImporte">Q 0.00</h3>
                 <button type="button" class="btn btn-success btn-sm w-100" id="btnArchivoExportar">
                   <i class="fa-solid fa-file-excel me-1"></i>Exportar Excel
@@ -90,20 +137,9 @@ export async function renderArchivo(root) {
           </div>
           <div class="table-responsive cotizaciones-list-wrap">
             <table class="table table-sm table-hover small mb-0">
-              <thead>
-                <tr>
-                  <th>Inicio</th>
-                  <th>Fin</th>
-                  <th>Empleado</th>
-                  <th>Cliente</th>
-                  <th>Reporte cliente</th>
-                  <th class="text-end">Importe</th>
-                  <th>Status</th>
-                  <th class="text-end">Acciones</th>
-                </tr>
-              </thead>
+              <thead id="archivoTableHead"></thead>
               <tbody id="archivoTableBody">
-                <tr><td colspan="${tableColSpan}" class="text-center text-muted">Cargando...</td></tr>
+                <tr><td colspan="8" class="text-center text-muted">Cargando...</td></tr>
               </tbody>
             </table>
           </div>
@@ -129,7 +165,29 @@ export async function renderArchivo(root) {
   await bindLogout();
 
   detailModal = new bootstrap.Modal(document.getElementById('archivoTicketModal'));
+  const tableHead = document.getElementById('archivoTableHead');
   const tableBody = document.getElementById('archivoTableBody');
+
+  function isTickets() {
+    return tipoTransaccion === TIPO_TICKETS;
+  }
+
+  function tableColSpan() {
+    return isTickets() ? TICKET_HEADERS.length : ORDEN_HEADERS.length;
+  }
+
+  function renderTableHead() {
+    const headers = isTickets() ? TICKET_HEADERS : ORDEN_HEADERS;
+    tableHead.innerHTML = `
+      <tr>
+        ${headers
+          .map(
+            (h) =>
+              `<th${h.align === 'end' ? ' class="text-end"' : ''}>${escapeHtml(h.label)}</th>`
+          )
+          .join('')}
+      </tr>`;
+  }
 
   function openDetailModal(ticket) {
     document.getElementById('archivoTicketModalLabel').textContent = `Ticket #${ticket.id}`;
@@ -140,14 +198,22 @@ export async function renderArchivo(root) {
   }
 
   function getVisibleTickets() {
-    return tickets.filter((t) => matchesSearch(t, searchQuery));
+    return tickets.filter((t) => matchesTicketSearch(t, searchQuery));
   }
 
-  function updateTotalImporte(visibleTickets) {
-    const total = visibleTickets.reduce(
-      (sum, t) => sum + (t.totalprecio != null ? Number(t.totalprecio) : 0),
-      0
-    );
+  function getVisibleOrdenes() {
+    return ordenes.filter((o) => matchesOrdenSearch(o, searchQuery));
+  }
+
+  function updateTotalImporte(visibleRows) {
+    const total = visibleRows.reduce((sum, row) => {
+      const value = isTickets()
+        ? row.totalprecio != null
+          ? Number(row.totalprecio)
+          : 0
+        : Number(row.importe ?? 0);
+      return sum + value;
+    }, 0);
     document.getElementById('archivoTotalImporte').textContent = formatImporte(total);
   }
 
@@ -165,22 +231,7 @@ export async function renderArchivo(root) {
     });
   }
 
-  function renderTable() {
-    const visible = getVisibleTickets();
-    updateTotalImporte(visible);
-
-    if (!tickets.length) {
-      tableBody.innerHTML =
-        `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay tickets en el rango seleccionado.</td></tr>`;
-      return;
-    }
-
-    if (!visible.length) {
-      tableBody.innerHTML =
-        `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay tickets con ese criterio de búsqueda.</td></tr>`;
-      return;
-    }
-
+  function renderTicketsTable(visible) {
     tableBody.innerHTML = visible
       .map((t) => {
         const clienteLabel = t.cliente_empresa || t.cliente_nombre || '—';
@@ -203,35 +254,105 @@ export async function renderArchivo(root) {
         </tr>`;
       })
       .join('');
-
     bindRowActions();
   }
 
+  function renderOrdenesTable(visible) {
+    tableBody.innerHTML = visible
+      .map(
+        (o) => `
+        <tr>
+          <td class="text-nowrap">${escapeHtml(formatDate(o.fecha))}</td>
+          <td class="text-nowrap">${escapeHtml(o.hora || '—')}</td>
+          <td>${escapeHtml(o.empleado_nombre || 'Sin asignar')}</td>
+          <td>${escapeHtml(o.desprod || '—')}</td>
+          <td>${escapeHtml(o.descategoria || '—')}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(o.importe))}</td>
+        </tr>`
+      )
+      .join('');
+  }
+
+  function renderTable() {
+    const colSpan = tableColSpan();
+    const emptyLabel = isTickets() ? 'tickets' : 'órdenes';
+    const visible = isTickets() ? getVisibleTickets() : getVisibleOrdenes();
+    const source = isTickets() ? tickets : ordenes;
+
+    updateTotalImporte(visible);
+
+    if (!source.length) {
+      tableBody.innerHTML =
+        `<tr><td colspan="${colSpan}" class="text-center text-muted">No hay ${emptyLabel} en el rango seleccionado.</td></tr>`;
+      return;
+    }
+
+    if (!visible.length) {
+      tableBody.innerHTML =
+        `<tr><td colspan="${colSpan}" class="text-center text-muted">No hay ${emptyLabel} con ese criterio de búsqueda.</td></tr>`;
+      return;
+    }
+
+    if (isTickets()) {
+      renderTicketsTable(visible);
+    } else {
+      renderOrdenesTable(visible);
+    }
+  }
+
   async function exportToExcel() {
-    const visible = getVisibleTickets();
+    const desde = document.getElementById('archivoDesde').value;
+    const hasta = document.getElementById('archivoHasta').value;
+
+    if (isTickets()) {
+      const visible = getVisibleTickets();
+      if (!visible.length) {
+        toastError('No hay datos para exportar con el filtro actual.');
+        return;
+      }
+
+      const rows = [
+        ['Inicio', 'Fin', 'Empleado', 'Cliente', 'Reporte cliente', 'Importe', 'Status'],
+        ...visible.map((t) => [
+          formatDate(t.fecha_inicio),
+          formatDate(t.fecha_fin),
+          t.empleado_nombre || 'Sin asignar',
+          t.cliente_empresa || t.cliente_nombre || '',
+          t.reporte_cliente || '',
+          t.totalprecio != null ? Number(t.totalprecio) : '',
+          statusLabel(t.status),
+        ]),
+      ];
+
+      try {
+        await exportRowsToExcel(rows, 'Tickets', `archivo-tickets_${desde}_${hasta}.xlsx`);
+        toastSuccess('Archivo Excel generado');
+      } catch (err) {
+        toastError(err.message || 'No se pudo exportar a Excel.');
+      }
+      return;
+    }
+
+    const visible = getVisibleOrdenes();
     if (!visible.length) {
       toastError('No hay datos para exportar con el filtro actual.');
       return;
     }
 
-    const desde = document.getElementById('archivoDesde').value;
-    const hasta = document.getElementById('archivoHasta').value;
-
     const rows = [
-      ['Inicio', 'Fin', 'Empleado', 'Cliente', 'Reporte cliente', 'Importe', 'Status'],
-      ...visible.map((t) => [
-        formatDate(t.fecha_inicio),
-        formatDate(t.fecha_fin),
-        t.empleado_nombre || 'Sin asignar',
-        t.cliente_empresa || t.cliente_nombre || '',
-        t.reporte_cliente || '',
-        t.totalprecio != null ? Number(t.totalprecio) : '',
-        statusLabel(t.status),
+      ['Fecha', 'Hora', 'Empleado', 'Producto', 'Categoría', 'Importe'],
+      ...visible.map((o) => [
+        formatDate(o.fecha),
+        o.hora || '',
+        o.empleado_nombre || 'Sin asignar',
+        o.desprod || '',
+        o.descategoria || '',
+        Number(o.importe ?? 0),
       ]),
     ];
 
     try {
-      await exportRowsToExcel(rows, 'Tickets', `archivo-tickets_${desde}_${hasta}.xlsx`);
+      await exportRowsToExcel(rows, 'Ordenes', `archivo-ordenes_${desde}_${hasta}.xlsx`);
       toastSuccess('Archivo Excel generado');
     } catch (err) {
       toastError(err.message || 'No se pudo exportar a Excel.');
@@ -247,22 +368,43 @@ export async function renderArchivo(root) {
       return;
     }
 
+    const colSpan = tableColSpan();
+    tableBody.innerHTML =
+      `<tr><td colspan="${colSpan}" class="text-center text-muted">Cargando...</td></tr>`;
+
     try {
-      tickets = await api.listTicketsArchivo(desde, hasta);
       searchQuery = document.getElementById('archivoSearch').value.trim();
+      if (isTickets()) {
+        tickets = await api.listTicketsArchivo(desde, hasta);
+        ordenes = [];
+      } else {
+        ordenes = await api.listOrdenesArchivo(desde, hasta);
+        tickets = [];
+      }
       renderTable();
     } catch (err) {
       tableBody.innerHTML =
-        `<tr><td colspan="${tableColSpan}" class="text-center text-danger">Error al cargar</td></tr>`;
+        `<tr><td colspan="${colSpan}" class="text-center text-danger">Error al cargar</td></tr>`;
       document.getElementById('archivoTotalImporte').textContent = formatImporte(0);
       toastError(err.message);
     }
+  }
+
+  function onTipoChange() {
+    tipoTransaccion = document.getElementById('archivoTipoTransaccion').value;
+    renderTableHead();
+    tickets = [];
+    ordenes = [];
+    loadList();
   }
 
   function onDateFilterChange() {
     loadList();
   }
 
+  renderTableHead();
+
+  document.getElementById('archivoTipoTransaccion').addEventListener('change', onTipoChange);
   document.getElementById('archivoDesde').addEventListener('change', onDateFilterChange);
   document.getElementById('archivoHasta').addEventListener('change', onDateFilterChange);
   document.getElementById('archivoSearch').addEventListener('input', (e) => {

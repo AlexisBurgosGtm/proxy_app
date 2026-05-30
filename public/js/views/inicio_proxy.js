@@ -5,6 +5,7 @@ import { formatDate, formatImporte } from '../format.js';
 import {
   renderImporteLineChartFromOrdenes,
   renderCategoriaBarChart,
+  renderEmpleadoBarChart,
   destroyDashboardCharts,
 } from '../components/dashboard-chart.js';
 
@@ -29,7 +30,13 @@ function escapeHtml(text) {
 export async function renderInicioProxy(root) {
   updateAppShell('inicio_proxy', 'Inicio');
   const today = todayDate();
-  let dashboardData = { ordenes: [], importe_por_fecha: [], importe_por_categoria: [], total: 0 };
+  let dashboardData = {
+    ordenes: [],
+    importe_por_fecha: [],
+    importe_por_categoria: [],
+    importe_por_empleado: [],
+    total: 0,
+  };
 
   root.innerHTML = `
     <main class="container-fluid py-2">
@@ -89,13 +96,23 @@ export async function renderInicioProxy(root) {
               </div>
             </div>
           </div>
-          <div class="card border-0 shadow-sm dashboard-chart-card">
+          <div class="card border-0 shadow-sm mb-3 dashboard-chart-card dashboard-chart-card-sm">
             <div class="card-header card-header-app py-2">
               <h2 class="h6 mb-0"><i class="fa-solid fa-chart-bar me-2"></i>Importe por categoría</h2>
             </div>
             <div class="card-body py-2">
               <div class="dashboard-categoria-chart-wrap">
                 <canvas id="importePorCategoriaChart" aria-label="Gráfica de importe por categoría"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="card border-0 shadow-sm dashboard-chart-card">
+            <div class="card-header card-header-app py-2">
+              <h2 class="h6 mb-0"><i class="fa-solid fa-users me-2"></i>Importe por empleado</h2>
+            </div>
+            <div class="card-body py-2">
+              <div class="dashboard-empleado-chart-wrap">
+                <canvas id="importePorEmpleadoChart" aria-label="Gráfica de importe por empleado"></canvas>
               </div>
             </div>
           </div>
@@ -138,7 +155,8 @@ export async function renderInicioProxy(root) {
     const desde = document.getElementById('filtroDesde').value;
     const hasta = document.getElementById('filtroHasta').value;
     const lineCanvas = document.getElementById('importePorFechaChart');
-    const barCanvas = document.getElementById('importePorCategoriaChart');
+    const catCanvas = document.getElementById('importePorCategoriaChart');
+    const empCanvas = document.getElementById('importePorEmpleadoChart');
 
     if (!desde || !hasta || desde > hasta) {
       destroyDashboardCharts();
@@ -153,11 +171,18 @@ export async function renderInicioProxy(root) {
         hasta
       );
       const catCount = dashboardData.importe_por_categoria.length;
-      const barWrap = barCanvas.closest('.dashboard-categoria-chart-wrap');
-      if (barWrap) {
-        barWrap.style.height = `${Math.max(220, catCount * 36)}px`;
+      const catWrap = catCanvas.closest('.dashboard-categoria-chart-wrap');
+      if (catWrap) {
+        catWrap.style.height = `${Math.max(140, catCount * 28)}px`;
       }
-      await renderCategoriaBarChart(barCanvas, dashboardData.importe_por_categoria);
+      await renderCategoriaBarChart(catCanvas, dashboardData.importe_por_categoria);
+
+      const empCount = dashboardData.importe_por_empleado.length;
+      const empWrap = empCanvas.closest('.dashboard-empleado-chart-wrap');
+      if (empWrap) {
+        empWrap.style.height = `${Math.max(160, empCount * 32)}px`;
+      }
+      await renderEmpleadoBarChart(empCanvas, dashboardData.importe_por_empleado);
     } catch (err) {
       destroyDashboardCharts();
       console.warn('No se pudieron renderizar las gráficas:', err);
@@ -184,7 +209,13 @@ export async function renderInicioProxy(root) {
       renderOrdenesTable(dashboardData.ordenes);
       await updateCharts();
     } catch (err) {
-      dashboardData = { ordenes: [], importe_por_fecha: [], importe_por_categoria: [], total: 0 };
+      dashboardData = {
+        ordenes: [],
+        importe_por_fecha: [],
+        importe_por_categoria: [],
+        importe_por_empleado: [],
+        total: 0,
+      };
       ordenesListBody.innerHTML =
         '<tr><td colspan="7" class="text-center text-danger">Error al cargar órdenes</td></tr>';
       totalEl.textContent = formatImporte(0);

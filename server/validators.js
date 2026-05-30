@@ -477,6 +477,19 @@ function sanitizeDetallesOrden(value, maxLen = 300) {
   return text;
 }
 
+function parseCuadreAmount(value, fieldName, errors) {
+  if (value === undefined || value === null || value === '') {
+    errors.push(`${fieldName} es obligatorio.`);
+    return null;
+  }
+  const num = Number(value);
+  if (Number.isNaN(num) || num < 0) {
+    errors.push(`${fieldName} debe ser un número mayor o igual a 0.`);
+    return null;
+  }
+  return Math.round(num * 100) / 100;
+}
+
 function validateFinalizarDia(body) {
   const errors = [];
   const codigo = Number(body.codigo);
@@ -485,6 +498,8 @@ function validateFinalizarDia(body) {
 
   const rawImporte = body.importe ?? body.monto_cuadrar;
   let importe = null;
+  let efectivo = null;
+  let documentos = null;
 
   if (!Number.isInteger(codigo) || codigo <= 0) {
     errors.push('Debe seleccionar un empleado válido.');
@@ -493,16 +508,14 @@ function validateFinalizarDia(body) {
     errors.push(fechaParsed.error);
   }
 
-  if (rawImporte === undefined || rawImporte === null || rawImporte === '') {
-    errors.push('El importe es obligatorio.');
-  } else {
-    const num = Number(rawImporte);
-    if (Number.isNaN(num) || num < 0) {
-      errors.push('El importe debe ser un número mayor o igual a 0.');
-    } else {
-      importe = Math.round(num * 100) / 100;
-    }
-  }
+  importe = parseCuadreAmount(rawImporte, 'El importe', errors);
+  efectivo = parseCuadreAmount(body.efectivo, 'El efectivo', errors);
+  documentos = parseCuadreAmount(body.documentos, 'Los documentos', errors);
+
+  const diferencia =
+    importe !== null && efectivo !== null && documentos !== null
+      ? Math.round((importe - efectivo - documentos) * 100) / 100
+      : null;
 
   return {
     valid: errors.length === 0,
@@ -511,6 +524,9 @@ function validateFinalizarDia(body) {
       codigo,
       fecha: fechaParsed.valid ? fechaParsed.iso : undefined,
       importe,
+      efectivo,
+      documentos,
+      diferencia,
       obs,
     },
   };

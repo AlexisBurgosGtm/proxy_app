@@ -234,6 +234,10 @@ export function listTicketsArchivo(start, end) {
   return post('/tickets/archivo', { start, end });
 }
 
+export function listOrdenesArchivo(start, end) {
+  return post('/ordenes/archivo', { start, end });
+}
+
 export function listTickets() {
 
   return post('/tickets/list');

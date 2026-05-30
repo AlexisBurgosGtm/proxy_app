@@ -2,6 +2,7 @@ import { formatDate, formatImporte } from '../format.js';
 
 let lineChartInstance = null;
 let categoriaChartInstance = null;
+let empleadoChartInstance = null;
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -49,9 +50,50 @@ export function destroyCategoriaChart() {
   }
 }
 
+export function destroyEmpleadoChart() {
+  if (empleadoChartInstance) {
+    empleadoChartInstance.destroy();
+    empleadoChartInstance = null;
+  }
+}
+
 export function destroyDashboardCharts() {
   destroyImporteChart();
   destroyCategoriaChart();
+  destroyEmpleadoChart();
+}
+
+function horizontalBarOptions() {
+  return {
+    indexAxis: 'y',
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        callbacks: {
+          label: (ctx) => ` Importe: ${formatImporte(ctx.parsed.x)}`,
+        },
+      },
+    },
+    scales: {
+      x: {
+        beginAtZero: true,
+        ticks: {
+          callback: (value) =>
+            `Q ${Number(value).toLocaleString('en-US', {
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 0,
+            })}`,
+        },
+      },
+      y: {
+        ticks: {
+          autoSkip: false,
+        },
+      },
+    },
+  };
 }
 
 export async function renderImporteLineChartFromOrdenes(canvas, importePorFecha, desde, hasta) {
@@ -146,36 +188,35 @@ export async function renderCategoriaBarChart(canvas, importePorCategoria) {
         },
       ],
     },
-    options: {
-      indexAxis: 'y',
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          callbacks: {
-            label: (ctx) => ` Importe: ${formatImporte(ctx.parsed.x)}`,
-          },
+    options: horizontalBarOptions(),
+  });
+}
+
+export async function renderEmpleadoBarChart(canvas, importePorEmpleado) {
+  if (!canvas) return;
+
+  destroyEmpleadoChart();
+
+  const items = importePorEmpleado || [];
+  const labels = items.map((row) => row.empleado_nombre || 'Sin asignar');
+  const values = items.map((row) => Number(row.importe) || 0);
+  const Chart = await loadChartJs();
+
+  empleadoChartInstance = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Importe',
+          data: values,
+          backgroundColor: 'rgba(23, 128, 212, 0.75)',
+          borderColor: '#1268b0',
+          borderWidth: 1,
         },
-      },
-      scales: {
-        x: {
-          beginAtZero: true,
-          ticks: {
-            callback: (value) =>
-              `Q ${Number(value).toLocaleString('en-US', {
-                minimumFractionDigits: 0,
-                maximumFractionDigits: 0,
-              })}`,
-          },
-        },
-        y: {
-          ticks: {
-            autoSkip: false,
-          },
-        },
-      },
+      ],
     },
+    options: horizontalBarOptions(),
   });
 }
 

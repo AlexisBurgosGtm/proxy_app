@@ -70,8 +70,8 @@ async function categoriaExists(codcategoria) {
   return Boolean(row);
 }
 
-async function corteExists(codigo, fecha) {
-  const row = await queryOne('SELECT ID FROM cortes WHERE CODIGO = ? AND FECHA = ?', [
+async function cuadreExists(codigo, fecha) {
+  const row = await queryOne('SELECT ID FROM cuadres WHERE CODIGO = ? AND FECHA = ?', [
     codigo,
     fecha,
   ]);
@@ -502,6 +502,17 @@ router.post(
       [desdeParsed.iso, hastaParsed.iso]
     );
 
+    const importePorEmpleadoRows = await query(
+      `SELECT COALESCE(e.nombre, 'Sin asignar') AS empleado_nombre,
+              COALESCE(SUM(o.IMPORTE), 0) AS importe
+       FROM ordenes o
+       LEFT JOIN empleados e ON e.codigo = o.CODIGO
+       WHERE o.FECHA >= ? AND o.FECHA <= ?
+       GROUP BY o.CODIGO, e.nombre
+       ORDER BY importe DESC`,
+      [desdeParsed.iso, hastaParsed.iso]
+    );
+
     const ordenes = ordenesRows.map(mapOrdenDashboardRow);
     const total = ordenes.reduce((sum, o) => sum + o.importe, 0);
 
@@ -514,6 +525,10 @@ router.post(
       })),
       importe_por_categoria: importePorCategoriaRows.map((row) => ({
         descategoria: row.DESCATEGORIA ?? row.descategoria ?? 'Sin categoría',
+        importe: Number(row.importe ?? row.IMPORTE ?? 0),
+      })),
+      importe_por_empleado: importePorEmpleadoRows.map((row) => ({
+        empleado_nombre: row.empleado_nombre ?? row.nombre ?? 'Sin asignar',
         importe: Number(row.importe ?? row.IMPORTE ?? 0),
       })),
     });
@@ -847,6 +862,46 @@ router.post(
 );
 
 router.post(
+  '/ordenes/archivo',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const { start, end } = req.body || {};
+    if (!start || !end) {
+      return res.status(400).json({ error: 'Los parámetros start y end son obligatorios.' });
+    }
+    const startDate = String(start).slice(0, 10);
+    const endDate = String(end).slice(0, 10);
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'La fecha inicial no puede ser mayor que la final.' });
+    }
+
+    const rows = await query(
+      `SELECT o.ID, o.FECHA, o.HORA, o.IMPORTE,
+              p.DESPROD, c.DESCATEGORIA, e.nombre AS empleado_nombre
+       FROM ordenes o
+       LEFT JOIN productos p ON p.CODPROD = o.CODPROD
+       LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       LEFT JOIN empleados e ON e.codigo = o.CODIGO
+       WHERE o.FECHA >= ? AND o.FECHA <= ?
+       ORDER BY o.FECHA ASC, o.ID ASC`,
+      [startDate, endDate]
+    );
+
+    res.json(
+      rows.map((row) => ({
+        id: row.ID ?? row.id,
+        fecha: toDateString(row.FECHA ?? row.fecha),
+        hora: row.HORA ?? row.hora ?? '',
+        empleado_nombre: row.empleado_nombre ?? '',
+        desprod: row.DESPROD ?? row.desprod ?? '',
+        descategoria: row.DESCATEGORIA ?? row.descategoria ?? '',
+        importe: Number(row.IMPORTE ?? row.importe ?? 0),
+      }))
+    );
+  })
+);
+
+router.post(
   '/tickets/archivo',
   requireSupervisor,
   asyncHandler(async (req, res) => {
@@ -1169,7 +1224,7 @@ router.post(
     }));
 
     const total = items.reduce((sum, item) => sum + item.importe, 0);
-    const diaCerrado = await corteExists(codigo, fechaParsed.iso);
+    const diaCerrado = await cuadreExists(codigo, fechaParsed.iso);
 
     res.json({ items, total, dia_cerrado: diaCerrado });
   })
@@ -1223,7 +1278,7 @@ router.post(
       return res.status(400).json({ error: 'El producto no existe o no está habilitado.' });
     }
 
-    if (await corteExists(result.data.codigo, result.data.fecha)) {
+    if (await cuadreExists(result.data.codigo, result.data.fecha)) {
       return res.status(409).json({ error: 'Este dia ya esta cerrado' });
     }
 
@@ -1259,13 +1314,22 @@ router.post(
     ]);
     if (!empleado) return res.status(404).json({ error: 'Empleado no encontrado.' });
 
-    if (await corteExists(result.data.codigo, result.data.fecha)) {
+    if (await cuadreExists(result.data.codigo, result.data.fecha)) {
       return res.status(409).json({ error: 'Este dia ya esta cerrado' });
     }
 
     const info = await execute(
-      'INSERT INTO cortes (CODIGO, FECHA, IMPORTE, OBS) VALUES (?, ?, ?, ?)',
-      [result.data.codigo, result.data.fecha, result.data.importe, result.data.obs]
+      `INSERT INTO cuadres (CODIGO, FECHA, IMPORTE, EFECTIVO, DOCUMENTOS, DIFERENCIA, OBS)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        result.data.codigo,
+        result.data.fecha,
+        result.data.importe,
+        result.data.efectivo,
+        result.data.documentos,
+        result.data.diferencia,
+        result.data.obs,
+      ]
     );
 
     res.status(201).json({ ok: true, id: info.insertId });

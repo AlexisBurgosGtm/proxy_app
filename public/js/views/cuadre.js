@@ -528,11 +528,16 @@ export async function renderCuadre(root) {
       document.getElementById('cuadreFinalizarObservaciones').value
     );
 
+    const efectivo = parseAmount(finalizarEfectivo.value);
+    const documentos = parseAmount(finalizarDocumentos.value);
+
     try {
       await api.finalizarDiaCuadre({
         codigo,
         fecha,
         importe: totalDia,
+        efectivo,
+        documentos,
         observaciones: obs || null,
       });
       toastSuccess('Día finalizado');

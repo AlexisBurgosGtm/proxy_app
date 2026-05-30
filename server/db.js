@@ -173,23 +173,64 @@ async function ensureCuadresSchema() {
       CODIGO INT NOT NULL,
       FECHA DATE NOT NULL,
       IMPORTE DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      EFECTIVO DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      DOCUMENTOS DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      DIFERENCIA DECIMAL(12, 2) NOT NULL DEFAULT 0,
       OBS TEXT NULL,
+      UNIQUE KEY uk_cuadres_codigo_fecha (CODIGO, FECHA),
       INDEX idx_cuadres_codigo_fecha (CODIGO, FECHA)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
   );
+  await ensureCuadresColumnUpdates();
 }
 
-async function ensureCortesSchema() {
-  await query(
-    `CREATE TABLE IF NOT EXISTS cortes (
-      ID INT AUTO_INCREMENT PRIMARY KEY,
-      CODIGO INT NOT NULL,
-      FECHA DATE NOT NULL,
-      IMPORTE DECIMAL(12, 2) NOT NULL DEFAULT 0,
-      OBS TEXT NULL,
-      UNIQUE KEY uk_cortes_codigo_fecha (CODIGO, FECHA)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+async function ensureCuadresColumnUpdates() {
+  const tables = await query(
+    `SELECT TABLE_NAME FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cuadres'`
   );
+  if (!tables.length) return;
+
+  const columns = await query('SHOW COLUMNS FROM cuadres');
+  const byName = Object.fromEntries(columns.map((c) => [c.Field, c]));
+
+  if (!byName.EFECTIVO) {
+    await query('ALTER TABLE cuadres ADD COLUMN EFECTIVO DECIMAL(12, 2) NOT NULL DEFAULT 0');
+  }
+  if (!byName.DOCUMENTOS) {
+    await query('ALTER TABLE cuadres ADD COLUMN DOCUMENTOS DECIMAL(12, 2) NOT NULL DEFAULT 0');
+  }
+  if (!byName.DIFERENCIA) {
+    await query('ALTER TABLE cuadres ADD COLUMN DIFERENCIA DECIMAL(12, 2) NOT NULL DEFAULT 0');
+  }
+
+  const indexes = await query('SHOW INDEX FROM cuadres WHERE Key_name = ?', ['uk_cuadres_codigo_fecha']);
+  if (!indexes.length) {
+    try {
+      await query('ALTER TABLE cuadres ADD UNIQUE KEY uk_cuadres_codigo_fecha (CODIGO, FECHA)');
+    } catch (err) {
+      if (err.code !== 'ER_DUP_KEYNAME') throw err;
+    }
+  }
+}
+
+async function migrateCortesToCuadres() {
+  const tables = await query(
+    `SELECT TABLE_NAME FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'cortes'`
+  );
+  if (!tables.length) return;
+
+  await query(
+    `INSERT INTO cuadres (CODIGO, FECHA, IMPORTE, EFECTIVO, DOCUMENTOS, DIFERENCIA, OBS)
+     SELECT c.CODIGO, c.FECHA, c.IMPORTE, 0, 0, 0, c.OBS
+     FROM cortes c
+     WHERE NOT EXISTS (
+       SELECT 1 FROM cuadres q WHERE q.CODIGO = c.CODIGO AND q.FECHA = c.FECHA
+     )`
+  );
+
+  await query('DROP TABLE IF EXISTS cortes');
 }
 
 async function ensureOrdenesSchemaUpdates() {
@@ -250,7 +291,7 @@ async function initDb() {
   await ensureProductosSchemaUpdates();
   await ensureOrdenesSchemaUpdates();
   await ensureCuadresSchema();
-  await ensureCortesSchema();
+  await migrateCortesToCuadres();
   await ensureTicketsFotosMigration();
 
   const countRow = await queryOne('SELECT COUNT(*) AS total FROM empleados');
