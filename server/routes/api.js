@@ -5,6 +5,8 @@ const {
   validateEmpleado,
   validateCliente,
   validateTicket,
+  validateCategoria,
+  validateProducto,
   parseDateOnly,
   sanitizeMysqlText,
 } = require('../validators');
@@ -39,6 +41,29 @@ async function empleadoExists(codigo) {
 
 async function clienteExists(codigo) {
   const row = await queryOne('SELECT codigo FROM clientes WHERE codigo = ?', [codigo]);
+  return Boolean(row);
+}
+
+function mapCategoriaRow(row) {
+  return {
+    codcategoria: row.CODCATEGORIA ?? row.codcategoria,
+    descategoria: row.DESCATEGORIA ?? row.descategoria ?? '',
+  };
+}
+
+function mapProductoRow(row) {
+  return {
+    codprod: row.CODPROD ?? row.codprod,
+    desprod: row.DESPROD ?? row.desprod ?? '',
+    codcategoria: row.CODCATEGORIA ?? row.codcategoria ?? null,
+    descategoria: row.DESCATEGORIA ?? row.descategoria ?? null,
+  };
+}
+
+async function categoriaExists(codcategoria) {
+  const row = await queryOne('SELECT CODCATEGORIA FROM categorias WHERE CODCATEGORIA = ?', [
+    codcategoria,
+  ]);
   return Boolean(row);
 }
 
@@ -786,6 +811,206 @@ router.post(
     if (!existing) return res.status(404).json({ error: 'Ticket no encontrado.' });
 
     await execute('DELETE FROM tickets WHERE id = ?', [id]);
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/categorias/list',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const rows = await query(
+      'SELECT CODCATEGORIA, DESCATEGORIA FROM categorias ORDER BY DESCATEGORIA'
+    );
+    res.json(rows.map(mapCategoriaRow));
+  })
+);
+
+router.post(
+  '/categorias/get',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const codcategoria = Number(req.body?.codcategoria);
+    const row = await queryOne(
+      'SELECT CODCATEGORIA, DESCATEGORIA FROM categorias WHERE CODCATEGORIA = ?',
+      [codcategoria]
+    );
+    if (!row) return res.status(404).json({ error: 'Categoría no encontrada.' });
+    res.json(mapCategoriaRow(row));
+  })
+);
+
+router.post(
+  '/categorias/create',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const result = validateCategoria(req.body);
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+
+    const info = await execute('INSERT INTO categorias (DESCATEGORIA) VALUES (?)', [
+      result.data.descategoria,
+    ]);
+
+    const row = await queryOne(
+      'SELECT CODCATEGORIA, DESCATEGORIA FROM categorias WHERE CODCATEGORIA = ?',
+      [info.insertId]
+    );
+    res.status(201).json(mapCategoriaRow(row));
+  })
+);
+
+router.post(
+  '/categorias/update',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const codcategoria = Number(req.body?.codcategoria);
+    const existing = await queryOne('SELECT CODCATEGORIA FROM categorias WHERE CODCATEGORIA = ?', [
+      codcategoria,
+    ]);
+    if (!existing) return res.status(404).json({ error: 'Categoría no encontrada.' });
+
+    const result = validateCategoria(req.body);
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+
+    await execute('UPDATE categorias SET DESCATEGORIA = ? WHERE CODCATEGORIA = ?', [
+      result.data.descategoria,
+      codcategoria,
+    ]);
+
+    const row = await queryOne(
+      'SELECT CODCATEGORIA, DESCATEGORIA FROM categorias WHERE CODCATEGORIA = ?',
+      [codcategoria]
+    );
+    res.json(mapCategoriaRow(row));
+  })
+);
+
+router.post(
+  '/categorias/delete',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const codcategoria = Number(req.body?.codcategoria);
+    const existing = await queryOne('SELECT CODCATEGORIA FROM categorias WHERE CODCATEGORIA = ?', [
+      codcategoria,
+    ]);
+    if (!existing) return res.status(404).json({ error: 'Categoría no encontrada.' });
+
+    const productoCount = await queryOne(
+      'SELECT COUNT(*) AS total FROM productos WHERE CODCATEGORIA = ?',
+      [codcategoria]
+    );
+    if (Number(productoCount.total) > 0) {
+      return res.status(409).json({
+        error: 'No se puede eliminar la categoría porque tiene productos asociados.',
+      });
+    }
+
+    await execute('DELETE FROM categorias WHERE CODCATEGORIA = ?', [codcategoria]);
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/productos/list',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const rows = await query(
+      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, c.DESCATEGORIA
+       FROM productos p
+       LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       ORDER BY p.DESPROD`
+    );
+    res.json(rows.map(mapProductoRow));
+  })
+);
+
+router.post(
+  '/productos/get',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const codprod = Number(req.body?.codprod);
+    const row = await queryOne(
+      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, c.DESCATEGORIA
+       FROM productos p
+       LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       WHERE p.CODPROD = ?`,
+      [codprod]
+    );
+    if (!row) return res.status(404).json({ error: 'Producto no encontrado.' });
+    res.json(mapProductoRow(row));
+  })
+);
+
+router.post(
+  '/productos/create',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const result = validateProducto(req.body);
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+
+    if (result.data.codcategoria) {
+      const cat = await categoriaExists(result.data.codcategoria);
+      if (!cat) return res.status(400).json({ error: 'La categoría seleccionada no existe.' });
+    }
+
+    const info = await execute('INSERT INTO productos (DESPROD, CODCATEGORIA) VALUES (?, ?)', [
+      result.data.desprod,
+      result.data.codcategoria,
+    ]);
+
+    const row = await queryOne(
+      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, c.DESCATEGORIA
+       FROM productos p
+       LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       WHERE p.CODPROD = ?`,
+      [info.insertId]
+    );
+    res.status(201).json(mapProductoRow(row));
+  })
+);
+
+router.post(
+  '/productos/update',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const codprod = Number(req.body?.codprod);
+    const existing = await queryOne('SELECT CODPROD FROM productos WHERE CODPROD = ?', [codprod]);
+    if (!existing) return res.status(404).json({ error: 'Producto no encontrado.' });
+
+    const result = validateProducto(req.body);
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+
+    if (result.data.codcategoria) {
+      const cat = await categoriaExists(result.data.codcategoria);
+      if (!cat) return res.status(400).json({ error: 'La categoría seleccionada no existe.' });
+    }
+
+    await execute('UPDATE productos SET DESPROD = ?, CODCATEGORIA = ? WHERE CODPROD = ?', [
+      result.data.desprod,
+      result.data.codcategoria,
+      codprod,
+    ]);
+
+    const row = await queryOne(
+      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, c.DESCATEGORIA
+       FROM productos p
+       LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       WHERE p.CODPROD = ?`,
+      [codprod]
+    );
+    res.json(mapProductoRow(row));
+  })
+);
+
+router.post(
+  '/productos/delete',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const codprod = Number(req.body?.codprod);
+    const existing = await queryOne('SELECT CODPROD FROM productos WHERE CODPROD = ?', [codprod]);
+    if (!existing) return res.status(404).json({ error: 'Producto no encontrado.' });
+
+    await execute('DELETE FROM productos WHERE CODPROD = ?', [codprod]);
     res.json({ ok: true });
   })
 );

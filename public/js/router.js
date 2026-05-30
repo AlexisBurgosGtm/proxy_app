@@ -8,6 +8,8 @@ import { renderClients } from './views/clients.js';
 import { renderTickets } from './views/tickets.js';
 import { renderArchivo } from './views/archivo.js';
 import { renderConfig } from './views/config.js';
+import { renderCategories } from './views/categories.js';
+import { renderProducts } from './views/products.js';
 
 const routes = {
   login: { render: renderLogin, auth: false },
@@ -17,6 +19,8 @@ const routes = {
   archivo: { render: renderArchivo, auth: true },
   empleados: { render: renderEmployees, auth: true },
   clientes: { render: renderClients, auth: true },
+  categorias: { render: renderCategories, auth: true },
+  productos: { render: renderProducts, auth: true },
   config: { render: renderConfig, auth: true },
 };
 
@@ -24,6 +28,8 @@ let currentRoute = null;
 
 function removeFloatingActions() {
   document.getElementById('btnFabNuevoTicket')?.remove();
+  document.getElementById('btnFabNuevoCategoria')?.remove();
+  document.getElementById('btnFabNuevoProducto')?.remove();
 }
 
 function removeDetachedModals() {

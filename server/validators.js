@@ -445,6 +445,59 @@ function validateTicket(body, partial = false) {
   };
 }
 
+function validateCategoria(body, partial = false) {
+  const errors = [];
+  const descategoria =
+    body.descategoria !== undefined ? String(body.descategoria).trim() : undefined;
+
+  if (!partial || descategoria !== undefined) {
+    if (!descategoria || descategoria.length === 0) {
+      errors.push('La descripción de categoría es obligatoria.');
+    } else if (descategoria.length > 255) {
+      errors.push('La descripción no puede superar 255 caracteres.');
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    data: { descategoria },
+  };
+}
+
+function validateProducto(body, partial = false) {
+  const errors = [];
+  const desprod = body.desprod !== undefined ? String(body.desprod).trim() : undefined;
+  const codcategoria =
+    body.codcategoria !== undefined && body.codcategoria !== null && body.codcategoria !== ''
+      ? Number(body.codcategoria)
+      : body.codcategoria === null || body.codcategoria === ''
+        ? null
+        : undefined;
+
+  if (!partial || desprod !== undefined) {
+    if (!desprod || desprod.length === 0) {
+      errors.push('La descripción del producto es obligatoria.');
+    }
+  }
+  if (!partial || body.codcategoria !== undefined) {
+    if (codcategoria !== null && codcategoria !== undefined) {
+      if (!Number.isInteger(codcategoria) || codcategoria <= 0) {
+        errors.push('Debe seleccionar una categoría válida.');
+      }
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    data: {
+      desprod,
+      codcategoria: codcategoria !== undefined ? codcategoria : partial ? undefined : null,
+    },
+  };
+}
+
 module.exports = {
   TELEFONO_REGEX,
   EVENTO_ESTATUS,
@@ -458,6 +511,8 @@ module.exports = {
   validateEvento,
   validateCotizacion,
   validateTicket,
+  validateCategoria,
+  validateProducto,
   parseDateOnly,
   sanitizeMysqlText,
 };

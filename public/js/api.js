@@ -156,6 +156,38 @@ export function deleteCliente(codigo) {
 
 }
 
+export function listCategorias() {
+  return post('/categorias/list');
+}
+
+export function createCategoria(body) {
+  return post('/categorias/create', body);
+}
+
+export function updateCategoria(body) {
+  return post('/categorias/update', body);
+}
+
+export function deleteCategoria(codcategoria) {
+  return post('/categorias/delete', { codcategoria });
+}
+
+export function listProductos() {
+  return post('/productos/list');
+}
+
+export function createProducto(body) {
+  return post('/productos/create', body);
+}
+
+export function updateProducto(body) {
+  return post('/productos/update', body);
+}
+
+export function deleteProducto(codprod) {
+  return post('/productos/delete', { codprod });
+}
+
 
 
 export function getDashboardResumen(start, end) {

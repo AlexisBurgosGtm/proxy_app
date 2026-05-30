@@ -48,7 +48,17 @@ export function canAccessRoute(path) {
   if (path === 'login') return true;
   if (!isAuthenticated()) return false;
   if (isSupervisor()) {
-    return ['inicio', 'tickets', 'calendario', 'archivo', 'empleados', 'clientes', 'config'].includes(path);
+    return [
+      'inicio',
+      'tickets',
+      'calendario',
+      'archivo',
+      'empleados',
+      'clientes',
+      'categorias',
+      'productos',
+      'config',
+    ].includes(path);
   }
   return ['calendario', 'tickets'].includes(path);
 }
