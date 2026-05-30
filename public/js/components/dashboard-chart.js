@@ -61,9 +61,9 @@ export async function renderImporteLineChart(canvas, tickets, desde, hasta) {
         {
           label: 'Importe',
           data: values,
-          borderColor: '#7c3aed',
-          backgroundColor: 'rgba(124, 58, 237, 0.12)',
-          pointBackgroundColor: '#5b21b6',
+          borderColor: '#219FFC',
+          backgroundColor: 'rgba(33, 159, 252, 0.12)',
+          pointBackgroundColor: '#1780d4',
           pointBorderColor: '#fff',
           pointRadius: 3,
           pointHoverRadius: 5,

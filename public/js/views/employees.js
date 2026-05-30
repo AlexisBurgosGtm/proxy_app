@@ -21,7 +21,7 @@ function estadoBadge(estado) {
 }
 
 function colorSwatch(color) {
-  const c = color || '#7c3aed';
+  const c = color || '#219FFC';
   return `<span class="empleado-color-swatch" style="background-color:${escapeHtml(c)}" title="${escapeHtml(c)}"></span>`;
 }
 
@@ -83,8 +83,8 @@ export async function renderEmployees(root) {
             <div class="mb-2">
               <label class="form-label" for="empleadoColor">Color</label>
               <div class="d-flex align-items-center gap-2">
-                <input type="color" class="form-control form-control-color form-control-sm" id="empleadoColor" value="#7c3aed">
-                <input type="text" class="form-control form-control-sm" id="empleadoColorHex" maxlength="7" pattern="#[0-9A-Fa-f]{6}" value="#7c3aed">
+                <input type="color" class="form-control form-control-color form-control-sm" id="empleadoColor" value="#219FFC">
+                <input type="text" class="form-control form-control-sm" id="empleadoColorHex" maxlength="7" pattern="#[0-9A-Fa-f]{6}" value="#219FFC">
               </div>
             </div>
             <div class="mb-2">
@@ -130,8 +130,8 @@ export async function renderEmployees(root) {
   function openModal(empleado = null) {
     document.getElementById('empleadoForm').reset();
     document.getElementById('codigoDisplayGroup').style.display = empleado ? 'block' : 'none';
-    colorPicker.value = '#7c3aed';
-    colorHex.value = '#7c3aed';
+    colorPicker.value = '#219FFC';
+    colorHex.value = '#219FFC';
     if (empleado) {
       document.getElementById('empleadoModalLabel').textContent = 'Editar empleado';
       document.getElementById('empleadoCodigo').value = empleado.codigo;
@@ -140,7 +140,7 @@ export async function renderEmployees(root) {
       document.getElementById('empleadoTelefono').value = empleado.telefono;
       document.getElementById('empleadoClave').value = '';
       document.getElementById('empleadoClave').placeholder = 'Dejar en blanco para no cambiar';
-      const color = empleado.color || '#7c3aed';
+      const color = empleado.color || '#219FFC';
       colorPicker.value = color;
       colorHex.value = color;
       document.getElementById('empleadoTipo').value = empleado.tipo || 'TECNICO';

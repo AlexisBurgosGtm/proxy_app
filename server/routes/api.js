@@ -26,7 +26,7 @@ function mapEmpleadoRow(row, includeClave = false) {
     telefono: row.telefono,
     tipo: row.tipo,
     estado: row.estado,
-    color: row.color || '#7c3aed',
+    color: row.color || '#219FFC',
   };
   if (includeClave) data.clave = row.clave;
   return data;
@@ -61,7 +61,7 @@ function mapTicketToCalendarEvent(row) {
     id: row.id,
     empleado_codigo: row.codigo_empleado,
     empleado_nombre: row.empleado_nombre || 'Sin asignar',
-    empleado_color: row.empleado_color || '#7c3aed',
+    empleado_color: row.empleado_color || '#219FFC',
     estatus: row.status === 'FINALIZADO' ? 'realizado' : 'pendiente',
     inicio: toDateString(row.fecha_inicio),
     fin: fechaFin,

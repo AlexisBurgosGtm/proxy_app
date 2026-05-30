@@ -47,7 +47,7 @@ async function migrate() {
         row.tipo || 'TECNICO',
         row.estado || 'ACTIVO',
         row.clave || '1234',
-        row.color || '#7c3aed',
+        row.color || '#219FFC',
       ]
     );
   }

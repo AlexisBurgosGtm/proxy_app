@@ -39,7 +39,7 @@ function validateEmpleado(body, partial = false) {
     }
   }
   if (!partial || color !== undefined) {
-    const value = color !== undefined ? color : partial ? undefined : '#7c3aed';
+    const value = color !== undefined ? color : partial ? undefined : '#219FFC';
     if (value !== undefined && !COLOR_HEX_REGEX.test(value)) {
       errors.push('El color debe ser un valor hexadecimal válido (#RRGGBB).');
     }
@@ -54,7 +54,7 @@ function validateEmpleado(body, partial = false) {
       tipo: tipo !== undefined ? tipo : partial ? undefined : 'TECNICO',
       estado: estado !== undefined ? estado : partial ? undefined : 'ACTIVO',
       clave,
-      color: color !== undefined ? color : partial ? undefined : '#7c3aed',
+      color: color !== undefined ? color : partial ? undefined : '#219FFC',
     },
   };
 }

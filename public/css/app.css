@@ -1,9 +1,9 @@
 :root {
-  --primary-start: #5b21b6;
-  --primary-end: #a855f7;
-  --primary-mid: #7c3aed;
-  --bs-primary: #7c3aed;
-  --bs-primary-rgb: 124, 58, 237;
+  --primary-start: #1780d4;
+  --primary-end: #6bb8ff;
+  --primary-mid: #219ffc;
+  --bs-primary: #219ffc;
+  --bs-primary-rgb: 33, 159, 252;
   --bs-body-color: #000;
   --bs-body-bg: #fff;
   --bs-secondary-color: #333;
@@ -98,7 +98,7 @@ body {
 
 .btn-primary:hover,
 .btn-primary:focus {
-  background: linear-gradient(135deg, #4c1d95 0%, #9333ea 100%);
+  background: linear-gradient(135deg, #1268b0 0%, #4aa8f5 100%);
   color: #fff;
   border: none;
 }
@@ -118,7 +118,7 @@ body {
 .form-control:focus,
 .form-select:focus {
   border-color: var(--primary-mid);
-  box-shadow: 0 0 0 0.2rem rgba(124, 58, 237, 0.3);
+  box-shadow: 0 0 0 0.2rem rgba(33, 159, 252, 0.3);
   color: #000;
 }
 
@@ -184,7 +184,7 @@ body {
   justify-content: center;
   padding: 0;
   font-size: 1.35rem;
-  box-shadow: 0 4px 14px rgba(91, 33, 182, 0.35);
+  box-shadow: 0 4px 14px rgba(33, 159, 252, 0.35);
   border: none;
 }
 
@@ -369,7 +369,7 @@ body {
 }
 
 .sidebar-nav .nav-link:not(.active):hover {
-  background-color: #f3e8ff;
+  background-color: #e8f4ff;
   color: #000;
 }
 
@@ -378,8 +378,8 @@ main {
 }
 
 .alert-success {
-  background-color: #f3e8ff;
-  border-color: #d8b4fe;
+  background-color: #e8f4ff;
+  border-color: #b3d9ff;
   color: #000;
 }
 
@@ -405,7 +405,7 @@ main {
 
 .fc .fc-button-primary:not(:disabled).fc-button-active,
 .fc .fc-button-primary:not(:disabled):active {
-  background: #5b21b6 !important;
+  background: #1780d4 !important;
 }
 
 .fc-event {
@@ -458,7 +458,7 @@ main {
 }
 
 .empleado-resumen-item:hover {
-  background-color: #f3e8ff;
+  background-color: #e8f4ff;
 }
 
 .sidebar-nav .nav-link .nav-icon {
@@ -475,7 +475,7 @@ main {
   flex-direction: column;
   min-height: 100vh;
   position: relative;
-  background: linear-gradient(160deg, #f8f5ff 0%, #ffffff 45%, #ede9fe 100%);
+  background: linear-gradient(160deg, #f0f8ff 0%, #ffffff 45%, #dceeff 100%);
 }
 
 .login-brand-logo {

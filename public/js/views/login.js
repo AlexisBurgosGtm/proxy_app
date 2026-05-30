@@ -6,11 +6,11 @@ import { showError, toastSuccess } from '../alerts.js';
 export async function renderLogin(root) {
   root.innerHTML = `
     <div class="login-page min-vh-100">
-      <img src="/favicon.png" alt="TECNOSYSTEM" class="login-brand-logo">
+      <img src="/favicon.png" alt="PROXY" class="login-brand-logo">
       <div class="login-wrapper d-flex align-items-center justify-content-center flex-grow-1 p-3">
         <div class="card shadow-sm border-0 login-card w-100">
           <div class="card-header login-header text-center py-3 border-0">
-            <h1 class="h5 mb-0 text-white">TECNOSYSTEM</h1>
+            <h1 class="h5 mb-0 text-white">PROXY</h1>
             <p class="small mb-0 text-white-50">Iniciar sesión</p>
           </div>
           <div class="card-body p-4">

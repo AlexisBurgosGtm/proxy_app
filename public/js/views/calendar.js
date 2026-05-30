@@ -8,7 +8,7 @@ let calendar = null;
 let filterEmpleado = '';
 let filterEstatus = 'pendiente';
 
-const DEFAULT_COLOR = '#7c3aed';
+const DEFAULT_COLOR = '#219FFC';
 
 function pad(n) {
   return String(n).padStart(2, '0');

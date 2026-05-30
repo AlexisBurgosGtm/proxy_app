@@ -49,7 +49,7 @@ const SCHEMA_STATEMENTS = [
     tipo VARCHAR(20) NOT NULL DEFAULT 'TECNICO',
     estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVO',
     clave VARCHAR(32) NOT NULL DEFAULT '1234',
-    color VARCHAR(7) NOT NULL DEFAULT '#7c3aed'
+    color VARCHAR(7) NOT NULL DEFAULT '#219FFC'
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
   `CREATE TABLE IF NOT EXISTS clientes (
     codigo INT AUTO_INCREMENT PRIMARY KEY,
@@ -196,7 +196,7 @@ async function initDb() {
     await execute(
       `INSERT INTO empleados (nombre, telefono, tipo, estado, clave, color)
        VALUES (?, ?, ?, ?, ?, ?)`,
-      ['Administrador', '00000000', 'SUPERVISOR', 'ACTIVO', 'ADMIN', '#7c3aed']
+      ['Administrador', '00000000', 'SUPERVISOR', 'ACTIVO', 'ADMIN', '#219FFC']
     );
   }
 }

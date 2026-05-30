@@ -72,7 +72,7 @@ function mountAppShell() {
     <div class="offcanvas offcanvas-start small sidebar-offcanvas" tabindex="-1" id="sidebarMenu"
       data-bs-scroll="false" data-bs-backdrop="true">
       <div class="offcanvas-header offcanvas-header-app border-bottom py-2">
-        <h6 class="offcanvas-title mb-0"><i class="fa-solid fa-calendar-check me-2"></i>TECNOSYSTEM</h6>
+        <h6 class="offcanvas-title mb-0"><i class="fa-solid fa-calendar-check me-2"></i>PROXY</h6>
         <button type="button" class="btn-close btn-close-sm" data-bs-dismiss="offcanvas" aria-label="Cerrar"></button>
       </div>
       <div class="offcanvas-body p-0">

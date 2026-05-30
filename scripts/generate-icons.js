@@ -50,6 +50,6 @@ function createPng(size, r, g, b) {
 
 const dir = path.join(__dirname, '..', 'public', 'icons');
 fs.mkdirSync(dir, { recursive: true });
-fs.writeFileSync(path.join(dir, 'icon-192.png'), createPng(192, 91, 33, 182));
-fs.writeFileSync(path.join(dir, 'icon-512.png'), createPng(512, 124, 58, 237));
+fs.writeFileSync(path.join(dir, 'icon-192.png'), createPng(192, 33, 159, 252));
+fs.writeFileSync(path.join(dir, 'icon-512.png'), createPng(512, 33, 159, 252));
 console.log('Icons generated');

@@ -37,7 +37,7 @@ export function toastWarning(message) {
 const confirmDialogDefaults = {
   showCancelButton: true,
   reverseButtons: true,
-  confirmButtonColor: '#7c3aed',
+  confirmButtonColor: '#219FFC',
   cancelButtonColor: '#6c757d',
 };
 
@@ -77,6 +77,6 @@ export function showError(message) {
     icon: 'error',
     title: 'Error',
     text: message,
-    confirmButtonColor: '#7c3aed',
+    confirmButtonColor: '#219FFC',
   });
 }
