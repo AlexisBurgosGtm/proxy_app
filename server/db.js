@@ -150,6 +150,64 @@ async function ensureClienteSchemaUpdates() {
   }
 }
 
+async function ensureProductosSchemaUpdates() {
+  const tables = await query(
+    `SELECT TABLE_NAME FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'productos'`
+  );
+  if (!tables.length) return;
+
+  const columns = await query('SHOW COLUMNS FROM productos');
+  const byName = Object.fromEntries(columns.map((c) => [c.Field, c]));
+  if (!byName.HABILITADO) {
+    await query(
+      `ALTER TABLE productos ADD COLUMN HABILITADO VARCHAR(2) NOT NULL DEFAULT 'SI'`
+    );
+  }
+}
+
+async function ensureCuadresSchema() {
+  await query(
+    `CREATE TABLE IF NOT EXISTS cuadres (
+      ID INT AUTO_INCREMENT PRIMARY KEY,
+      CODIGO INT NOT NULL,
+      FECHA DATE NOT NULL,
+      IMPORTE DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      OBS TEXT NULL,
+      INDEX idx_cuadres_codigo_fecha (CODIGO, FECHA)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
+async function ensureCortesSchema() {
+  await query(
+    `CREATE TABLE IF NOT EXISTS cortes (
+      ID INT AUTO_INCREMENT PRIMARY KEY,
+      CODIGO INT NOT NULL,
+      FECHA DATE NOT NULL,
+      IMPORTE DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      OBS TEXT NULL,
+      UNIQUE KEY uk_cortes_codigo_fecha (CODIGO, FECHA)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
+async function ensureOrdenesSchemaUpdates() {
+  const tables = await query(
+    `SELECT TABLE_NAME FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ordenes'`
+  );
+  if (!tables.length) return;
+
+  const columns = await query('SHOW COLUMNS FROM ordenes');
+  const byName = Object.fromEntries(columns.map((c) => [c.Field, c]));
+  if (!byName.Finalizado) {
+    await query(
+      `ALTER TABLE ordenes ADD COLUMN Finalizado VARCHAR(2) NOT NULL DEFAULT 'NO'`
+    );
+  }
+}
+
 async function ensureTicketsFotosMigration() {
   const tables = await query(
     `SELECT TABLE_NAME FROM information_schema.TABLES
@@ -189,6 +247,10 @@ async function initDb() {
   await dropLegacyTables();
   await ensureTicketSchemaUpdates();
   await ensureClienteSchemaUpdates();
+  await ensureProductosSchemaUpdates();
+  await ensureOrdenesSchemaUpdates();
+  await ensureCuadresSchema();
+  await ensureCortesSchema();
   await ensureTicketsFotosMigration();
 
   const countRow = await queryOne('SELECT COUNT(*) AS total FROM empleados');

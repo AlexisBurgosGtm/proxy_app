@@ -7,6 +7,8 @@ const {
   validateTicket,
   validateCategoria,
   validateProducto,
+  validateOrden,
+  validateFinalizarDia,
   parseDateOnly,
   sanitizeMysqlText,
 } = require('../validators');
@@ -57,6 +59,7 @@ function mapProductoRow(row) {
     desprod: row.DESPROD ?? row.desprod ?? '',
     codcategoria: row.CODCATEGORIA ?? row.codcategoria ?? null,
     descategoria: row.DESCATEGORIA ?? row.descategoria ?? null,
+    habilitado: row.HABILITADO ?? row.habilitado ?? 'SI',
   };
 }
 
@@ -65,6 +68,63 @@ async function categoriaExists(codcategoria) {
     codcategoria,
   ]);
   return Boolean(row);
+}
+
+async function corteExists(codigo, fecha) {
+  const row = await queryOne('SELECT ID FROM cortes WHERE CODIGO = ? AND FECHA = ?', [
+    codigo,
+    fecha,
+  ]);
+  return Boolean(row);
+}
+
+function assertCuadreEmpleadoAccess(req, res, codigo) {
+  if (req.auth.tipo === 'TECNICO' && codigo !== req.auth.empleado_codigo) {
+    res.status(403).json({ error: 'No tiene permiso para este empleado.' });
+    return false;
+  }
+  return true;
+}
+
+function assertCuadreFechaNotFuture(res, fechaIso) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const fecha = new Date(`${fechaIso}T00:00:00`);
+  if (fecha > today) {
+    res.status(400).json({ error: 'La fecha no puede ser mayor a la fecha actual.' });
+    return false;
+  }
+  return true;
+}
+
+function mapOrdenListRow(row) {
+  return {
+    id: row.ID ?? row.id,
+    desprod: row.DESPROD ?? row.desprod ?? '',
+    detalles: row.DETALLES ?? row.detalles ?? '',
+    hora: row.HORA ?? row.hora ?? '',
+    importe: Number(row.IMPORTE ?? row.importe ?? 0),
+  };
+}
+
+function mapOrdenDashboardRow(row) {
+  return {
+    id: row.ID ?? row.id,
+    fecha: toDateString(row.FECHA ?? row.fecha),
+    hora: row.HORA ?? row.hora ?? '',
+    empleado_nombre: row.empleado_nombre ?? row.nombre ?? '',
+    desprod: row.DESPROD ?? row.desprod ?? '',
+    descategoria: row.DESCATEGORIA ?? row.descategoria ?? '',
+    detalles: row.DETALLES ?? row.detalles ?? '',
+    importe: Number(row.IMPORTE ?? row.importe ?? 0),
+  };
+}
+
+function currentTimeHm() {
+  const now = new Date();
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  return `${h}:${m}`;
 }
 
 function filterTicketsForAuth(rows, auth) {
@@ -388,6 +448,73 @@ router.post(
       empleados: empleados.map((e) => ({
         ...e,
         pendientes: pendientesMap[e.codigo] || 0,
+      })),
+    });
+  })
+);
+
+router.post(
+  '/dashboard/ordenes-resumen',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const desdeParsed = parseDateOnly(req.body?.desde, 'Desde');
+    const hastaParsed = parseDateOnly(req.body?.hasta, 'Hasta');
+    if (!desdeParsed.valid) {
+      return res.status(400).json({ error: desdeParsed.error });
+    }
+    if (!hastaParsed.valid) {
+      return res.status(400).json({ error: hastaParsed.error });
+    }
+    if (desdeParsed.iso > hastaParsed.iso) {
+      return res.status(400).json({ error: 'La fecha inicial no puede ser mayor que la final.' });
+    }
+
+    const ordenesRows = await query(
+      `SELECT o.ID, o.FECHA, o.HORA, o.DETALLES, o.IMPORTE,
+              p.DESPROD, c.DESCATEGORIA, e.nombre AS empleado_nombre
+       FROM ordenes o
+       LEFT JOIN productos p ON p.CODPROD = o.CODPROD
+       LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       LEFT JOIN empleados e ON e.codigo = o.CODIGO
+       WHERE o.FECHA >= ? AND o.FECHA <= ?
+       ORDER BY o.ID ASC`,
+      [desdeParsed.iso, hastaParsed.iso]
+    );
+
+    const importePorFechaRows = await query(
+      `SELECT o.FECHA, COALESCE(SUM(o.IMPORTE), 0) AS importe
+       FROM ordenes o
+       WHERE o.FECHA >= ? AND o.FECHA <= ?
+       GROUP BY o.FECHA
+       ORDER BY o.FECHA ASC`,
+      [desdeParsed.iso, hastaParsed.iso]
+    );
+
+    const importePorCategoriaRows = await query(
+      `SELECT COALESCE(c.DESCATEGORIA, 'Sin categoría') AS DESCATEGORIA,
+              COALESCE(SUM(o.IMPORTE), 0) AS importe
+       FROM ordenes o
+       LEFT JOIN productos p ON p.CODPROD = o.CODPROD
+       LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       WHERE o.FECHA >= ? AND o.FECHA <= ?
+       GROUP BY COALESCE(c.DESCATEGORIA, 'Sin categoría')
+       ORDER BY importe DESC`,
+      [desdeParsed.iso, hastaParsed.iso]
+    );
+
+    const ordenes = ordenesRows.map(mapOrdenDashboardRow);
+    const total = ordenes.reduce((sum, o) => sum + o.importe, 0);
+
+    res.json({
+      ordenes,
+      total,
+      importe_por_fecha: importePorFechaRows.map((row) => ({
+        fecha: toDateString(row.FECHA ?? row.fecha),
+        importe: Number(row.importe ?? row.IMPORTE ?? 0),
+      })),
+      importe_por_categoria: importePorCategoriaRows.map((row) => ({
+        descategoria: row.DESCATEGORIA ?? row.descategoria ?? 'Sin categoría',
+        importe: Number(row.importe ?? row.IMPORTE ?? 0),
       })),
     });
   })
@@ -915,7 +1042,7 @@ router.post(
   requireSupervisor,
   asyncHandler(async (req, res) => {
     const rows = await query(
-      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, c.DESCATEGORIA
+      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, p.HABILITADO, c.DESCATEGORIA
        FROM productos p
        LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
        ORDER BY p.DESPROD`
@@ -930,7 +1057,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const codprod = Number(req.body?.codprod);
     const row = await queryOne(
-      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, c.DESCATEGORIA
+      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, p.HABILITADO, c.DESCATEGORIA
        FROM productos p
        LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
        WHERE p.CODPROD = ?`,
@@ -953,13 +1080,13 @@ router.post(
       if (!cat) return res.status(400).json({ error: 'La categoría seleccionada no existe.' });
     }
 
-    const info = await execute('INSERT INTO productos (DESPROD, CODCATEGORIA) VALUES (?, ?)', [
-      result.data.desprod,
-      result.data.codcategoria,
-    ]);
+    const info = await execute(
+      'INSERT INTO productos (DESPROD, CODCATEGORIA, HABILITADO) VALUES (?, ?, ?)',
+      [result.data.desprod, result.data.codcategoria, result.data.habilitado]
+    );
 
     const row = await queryOne(
-      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, c.DESCATEGORIA
+      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, p.HABILITADO, c.DESCATEGORIA
        FROM productos p
        LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
        WHERE p.CODPROD = ?`,
@@ -985,20 +1112,163 @@ router.post(
       if (!cat) return res.status(400).json({ error: 'La categoría seleccionada no existe.' });
     }
 
-    await execute('UPDATE productos SET DESPROD = ?, CODCATEGORIA = ? WHERE CODPROD = ?', [
-      result.data.desprod,
-      result.data.codcategoria,
-      codprod,
-    ]);
+    await execute(
+      'UPDATE productos SET DESPROD = ?, CODCATEGORIA = ?, HABILITADO = ? WHERE CODPROD = ?',
+      [result.data.desprod, result.data.codcategoria, result.data.habilitado, codprod]
+    );
 
     const row = await queryOne(
-      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, c.DESCATEGORIA
+      `SELECT p.CODPROD, p.DESPROD, p.CODCATEGORIA, p.HABILITADO, c.DESCATEGORIA
        FROM productos p
        LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
        WHERE p.CODPROD = ?`,
       [codprod]
     );
     res.json(mapProductoRow(row));
+  })
+);
+
+router.post(
+  '/cuadre/productos-habilitados',
+  asyncHandler(async (req, res) => {
+    const codigo = Number(req.body?.codigo);
+    const fechaParsed = parseDateOnly(req.body?.fecha, 'Fecha');
+    if (!Number.isInteger(codigo) || codigo <= 0) {
+      return res.status(400).json({ error: 'Debe seleccionar un empleado válido.' });
+    }
+    if (!fechaParsed.valid) {
+      return res.status(400).json({ error: fechaParsed.error });
+    }
+    if (!assertCuadreEmpleadoAccess(req, res, codigo)) return;
+    if (!assertCuadreFechaNotFuture(res, fechaParsed.iso)) return;
+
+    const empleado = await queryOne('SELECT codigo FROM empleados WHERE codigo = ?', [codigo]);
+    if (!empleado) {
+      return res.status(404).json({ error: 'Empleado no encontrado.' });
+    }
+
+    const rows = await query(
+      `SELECT p.CODPROD, p.DESPROD, c.DESCATEGORIA,
+              COALESCE(SUM(o.IMPORTE), 0) AS importe
+       FROM productos p
+       LEFT JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       LEFT JOIN ordenes o ON o.CODPROD = p.CODPROD
+         AND o.CODIGO = ?
+         AND o.FECHA = ?
+       WHERE p.HABILITADO = 'SI'
+       GROUP BY p.CODPROD, p.DESPROD, c.DESCATEGORIA
+       ORDER BY c.DESCATEGORIA, p.DESPROD`,
+      [codigo, fechaParsed.iso]
+    );
+
+    const items = rows.map((row) => ({
+      codprod: row.CODPROD ?? row.codprod,
+      desprod: row.DESPROD ?? row.desprod ?? '',
+      descategoria: row.DESCATEGORIA ?? row.descategoria ?? '',
+      importe: Number(row.importe ?? row.IMPORTE ?? 0),
+    }));
+
+    const total = items.reduce((sum, item) => sum + item.importe, 0);
+    const diaCerrado = await corteExists(codigo, fechaParsed.iso);
+
+    res.json({ items, total, dia_cerrado: diaCerrado });
+  })
+);
+
+router.post(
+  '/cuadre/ordenes-list',
+  asyncHandler(async (req, res) => {
+    const codigo = Number(req.body?.codigo);
+    const fechaParsed = parseDateOnly(req.body?.fecha, 'Fecha');
+    if (!Number.isInteger(codigo) || codigo <= 0) {
+      return res.status(400).json({ error: 'Debe seleccionar un empleado válido.' });
+    }
+    if (!fechaParsed.valid) {
+      return res.status(400).json({ error: fechaParsed.error });
+    }
+    if (!assertCuadreEmpleadoAccess(req, res, codigo)) return;
+    if (!assertCuadreFechaNotFuture(res, fechaParsed.iso)) return;
+
+    const rows = await query(
+      `SELECT o.ID, o.DETALLES, o.HORA, o.IMPORTE, p.DESPROD
+       FROM ordenes o
+       LEFT JOIN productos p ON p.CODPROD = o.CODPROD
+       WHERE o.CODIGO = ? AND o.FECHA = ?
+       ORDER BY o.ID ASC`,
+      [codigo, fechaParsed.iso]
+    );
+
+    res.json(rows.map(mapOrdenListRow));
+  })
+);
+
+router.post(
+  '/ordenes/create',
+  asyncHandler(async (req, res) => {
+    const result = validateOrden(req.body);
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+    if (!assertCuadreEmpleadoAccess(req, res, result.data.codigo)) return;
+    if (!assertCuadreFechaNotFuture(res, result.data.fecha)) return;
+
+    const empleado = await queryOne('SELECT codigo FROM empleados WHERE codigo = ?', [
+      result.data.codigo,
+    ]);
+    if (!empleado) return res.status(404).json({ error: 'Empleado no encontrado.' });
+
+    const producto = await queryOne(
+      `SELECT CODPROD FROM productos WHERE CODPROD = ? AND HABILITADO = 'SI'`,
+      [result.data.codprod]
+    );
+    if (!producto) {
+      return res.status(400).json({ error: 'El producto no existe o no está habilitado.' });
+    }
+
+    if (await corteExists(result.data.codigo, result.data.fecha)) {
+      return res.status(409).json({ error: 'Este dia ya esta cerrado' });
+    }
+
+    const hora = currentTimeHm();
+
+    const info = await execute(
+      `INSERT INTO ordenes (CODIGO, FECHA, HORA, CODPROD, DETALLES, IMPORTE, Finalizado)
+       VALUES (?, ?, ?, ?, ?, ?, 'NO')`,
+      [
+        result.data.codigo,
+        result.data.fecha,
+        hora,
+        result.data.codprod,
+        result.data.detalles,
+        result.data.importe,
+      ]
+    );
+
+    res.status(201).json({ id: info.insertId, ok: true });
+  })
+);
+
+router.post(
+  '/cuadre/finalizar-dia',
+  asyncHandler(async (req, res) => {
+    const result = validateFinalizarDia(req.body);
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+    if (!assertCuadreEmpleadoAccess(req, res, result.data.codigo)) return;
+    if (!assertCuadreFechaNotFuture(res, result.data.fecha)) return;
+
+    const empleado = await queryOne('SELECT codigo FROM empleados WHERE codigo = ?', [
+      result.data.codigo,
+    ]);
+    if (!empleado) return res.status(404).json({ error: 'Empleado no encontrado.' });
+
+    if (await corteExists(result.data.codigo, result.data.fecha)) {
+      return res.status(409).json({ error: 'Este dia ya esta cerrado' });
+    }
+
+    const info = await execute(
+      'INSERT INTO cortes (CODIGO, FECHA, IMPORTE, OBS) VALUES (?, ?, ?, ?)',
+      [result.data.codigo, result.data.fecha, result.data.importe, result.data.obs]
+    );
+
+    res.status(201).json({ ok: true, id: info.insertId });
   })
 );
 

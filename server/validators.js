@@ -465,9 +465,105 @@ function validateCategoria(body, partial = false) {
   };
 }
 
+const SI_NO_VALUES = ['SI', 'NO'];
+
+function sanitizeDetallesOrden(value, maxLen = 300) {
+  if (value === undefined || value === null) return null;
+  let text = sanitizeMysqlText(value);
+  if (!text) return null;
+  if (text.length > maxLen) {
+    return text.slice(0, maxLen);
+  }
+  return text;
+}
+
+function validateFinalizarDia(body) {
+  const errors = [];
+  const codigo = Number(body.codigo);
+  const fechaParsed = parseDateOnly(body.fecha, 'Fecha');
+  const obs = sanitizeDetallesOrden(body.observaciones, 500);
+
+  const rawImporte = body.importe ?? body.monto_cuadrar;
+  let importe = null;
+
+  if (!Number.isInteger(codigo) || codigo <= 0) {
+    errors.push('Debe seleccionar un empleado válido.');
+  }
+  if (!fechaParsed.valid) {
+    errors.push(fechaParsed.error);
+  }
+
+  if (rawImporte === undefined || rawImporte === null || rawImporte === '') {
+    errors.push('El importe es obligatorio.');
+  } else {
+    const num = Number(rawImporte);
+    if (Number.isNaN(num) || num < 0) {
+      errors.push('El importe debe ser un número mayor o igual a 0.');
+    } else {
+      importe = Math.round(num * 100) / 100;
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    data: {
+      codigo,
+      fecha: fechaParsed.valid ? fechaParsed.iso : undefined,
+      importe,
+      obs,
+    },
+  };
+}
+
+function validateOrden(body) {
+  const errors = [];
+  const codigo = Number(body.codigo);
+  const codprod = Number(body.codprod);
+  const fechaParsed = parseDateOnly(body.fecha, 'Fecha');
+
+  let importe = null;
+  if (body.importe === undefined || body.importe === null || body.importe === '') {
+    errors.push('El importe es obligatorio.');
+  } else {
+    const num = Number(String(body.importe).replace(/,/g, '').trim());
+    if (Number.isNaN(num) || num < 0) {
+      errors.push('El importe debe ser un número mayor o igual a 0.');
+    } else {
+      importe = Math.round(num * 100) / 100;
+    }
+  }
+
+  if (!Number.isInteger(codigo) || codigo <= 0) {
+    errors.push('Debe seleccionar un empleado válido.');
+  }
+  if (!Number.isInteger(codprod) || codprod <= 0) {
+    errors.push('Debe seleccionar un producto válido.');
+  }
+  if (!fechaParsed.valid) {
+    errors.push(fechaParsed.error);
+  }
+
+  const detalles = sanitizeDetallesOrden(body.detalles);
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    data: {
+      codigo,
+      codprod,
+      fecha: fechaParsed.valid ? fechaParsed.iso : undefined,
+      detalles,
+      importe,
+    },
+  };
+}
+
 function validateProducto(body, partial = false) {
   const errors = [];
   const desprod = body.desprod !== undefined ? String(body.desprod).trim() : undefined;
+  const habilitado =
+    body.habilitado !== undefined ? String(body.habilitado).trim().toUpperCase() : undefined;
   const codcategoria =
     body.codcategoria !== undefined && body.codcategoria !== null && body.codcategoria !== ''
       ? Number(body.codcategoria)
@@ -487,6 +583,12 @@ function validateProducto(body, partial = false) {
       }
     }
   }
+  if (!partial || habilitado !== undefined) {
+    const value = habilitado !== undefined ? habilitado : partial ? undefined : 'SI';
+    if (value !== undefined && !SI_NO_VALUES.includes(value)) {
+      errors.push('Habilitado debe ser SI o NO.');
+    }
+  }
 
   return {
     valid: errors.length === 0,
@@ -494,6 +596,7 @@ function validateProducto(body, partial = false) {
     data: {
       desprod,
       codcategoria: codcategoria !== undefined ? codcategoria : partial ? undefined : null,
+      habilitado: habilitado !== undefined ? habilitado : partial ? undefined : 'SI',
     },
   };
 }
@@ -513,6 +616,9 @@ module.exports = {
   validateTicket,
   validateCategoria,
   validateProducto,
+  validateOrden,
+  validateFinalizarDia,
+  sanitizeDetallesOrden,
   parseDateOnly,
   sanitizeMysqlText,
 };

@@ -4,14 +4,14 @@ import { navigate } from '../router.js';
 import { confirmAction, toastSuccess } from '../alerts.js';
 
 const ALL_PAGES = [
-  { id: 'inicio', label: 'Inicio', path: 'inicio', icon: 'fa-house', supervisorOnly: true },
+  { id: 'inicio_proxy', label: 'Inicio', path: 'inicio_proxy', icon: 'fa-house', supervisorOnly: true },
+  { id: 'cuadre', label: 'Cuadre', path: 'cuadre', icon: 'fa-clipboard-list', supervisorOnly: false },
   { id: 'tickets', label: 'Tickets', path: 'tickets', icon: 'fa-ticket', supervisorOnly: false },
-  { id: 'calendario', label: 'Eventos', path: 'calendario', icon: 'fa-calendar-days', supervisorOnly: false },
   { id: 'archivo', label: 'Archivo', path: 'archivo', icon: 'fa-box-archive', supervisorOnly: true },
-  { id: 'empleados', label: 'Empleados', path: 'empleados', icon: 'fa-user-group', supervisorOnly: true },
   { id: 'clientes', label: 'Clientes', path: 'clientes', icon: 'fa-building', supervisorOnly: true },
-  { id: 'categorias', label: 'Categorías', path: 'categorias', icon: 'fa-tags', supervisorOnly: true },
+  { id: 'empleados', label: 'Empleados', path: 'empleados', icon: 'fa-user-group', supervisorOnly: true },
   { id: 'productos', label: 'Productos', path: 'productos', icon: 'fa-box', supervisorOnly: true },
+  { id: 'categorias', label: 'Categorías', path: 'categorias', icon: 'fa-tags', supervisorOnly: true },
   { id: 'config', label: 'Config', path: 'config', icon: 'fa-gear', supervisorOnly: true },
 ];
 

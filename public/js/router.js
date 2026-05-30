@@ -1,7 +1,8 @@
 import { isAuthenticated, canAccessRoute, getDefaultRoute } from './auth.js';
 import { closeSidebar, hideAppShell } from './components/layout.js';
 import { renderLogin } from './views/login.js';
-import { renderHome } from './views/home.js';
+import { renderInicioProxy } from './views/inicio_proxy.js';
+import { destroyDashboardCharts } from './components/dashboard-chart.js';
 import { renderCalendar, destroyCalendar } from './views/calendar.js';
 import { renderEmployees } from './views/employees.js';
 import { renderClients } from './views/clients.js';
@@ -10,10 +11,11 @@ import { renderArchivo } from './views/archivo.js';
 import { renderConfig } from './views/config.js';
 import { renderCategories } from './views/categories.js';
 import { renderProducts } from './views/products.js';
+import { renderCuadre } from './views/cuadre.js';
 
 const routes = {
   login: { render: renderLogin, auth: false },
-  inicio: { render: renderHome, auth: true },
+  inicio_proxy: { render: renderInicioProxy, auth: true },
   tickets: { render: renderTickets, auth: true },
   calendario: { render: renderCalendar, auth: true },
   archivo: { render: renderArchivo, auth: true },
@@ -21,6 +23,7 @@ const routes = {
   clientes: { render: renderClients, auth: true },
   categorias: { render: renderCategories, auth: true },
   productos: { render: renderProducts, auth: true },
+  cuadre: { render: renderCuadre, auth: true },
   config: { render: renderConfig, auth: true },
 };
 
@@ -30,6 +33,8 @@ function removeFloatingActions() {
   document.getElementById('btnFabNuevoTicket')?.remove();
   document.getElementById('btnFabNuevoCategoria')?.remove();
   document.getElementById('btnFabNuevoProducto')?.remove();
+  document.getElementById('btnFabFinalizarDia')?.remove();
+  document.getElementById('btnFabCuadreOrdenes')?.remove();
 }
 
 function removeDetachedModals() {
@@ -59,6 +64,11 @@ export async function handleRoute() {
   const path = parseHash();
   const route = routes[path];
 
+  if (path === 'inicio') {
+    navigate(isAuthenticated() ? (canAccessRoute('inicio_proxy') ? 'inicio_proxy' : getDefaultRoute()) : 'login');
+    return;
+  }
+
   if (!route) {
     navigate(isAuthenticated() ? getDefaultRoute() : 'login');
     return;
@@ -81,6 +91,10 @@ export async function handleRoute() {
 
   if (currentRoute === 'calendario' && path !== 'calendario') {
     destroyCalendar();
+  }
+
+  if (currentRoute === 'inicio_proxy' && path !== 'inicio_proxy') {
+    destroyDashboardCharts();
   }
 
   if (currentRoute !== path) {

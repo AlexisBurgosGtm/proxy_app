@@ -188,12 +188,32 @@ export function deleteProducto(codprod) {
   return post('/productos/delete', { codprod });
 }
 
+export function getCuadreProductosHabilitados(codigo, fecha) {
+  return post('/cuadre/productos-habilitados', { codigo, fecha });
+}
+
+export function createOrden(body) {
+  return post('/ordenes/create', body);
+}
+
+export function finalizarDiaCuadre(body) {
+  return post('/cuadre/finalizar-dia', body);
+}
+
+export function listCuadreOrdenes(codigo, fecha) {
+  return post('/cuadre/ordenes-list', { codigo, fecha });
+}
+
 
 
 export function getDashboardResumen(start, end) {
 
   return post('/dashboard/resumen', { start, end });
 
+}
+
+export function getDashboardOrdenesResumen(desde, hasta) {
+  return post('/dashboard/ordenes-resumen', { desde, hasta });
 }
 
 

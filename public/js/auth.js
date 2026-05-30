@@ -41,7 +41,7 @@ export function isAuthenticated() {
 }
 
 export function getDefaultRoute() {
-  return isSupervisor() ? 'inicio' : 'tickets';
+  return isSupervisor() ? 'inicio_proxy' : 'cuadre';
 }
 
 export function canAccessRoute(path) {
@@ -49,7 +49,7 @@ export function canAccessRoute(path) {
   if (!isAuthenticated()) return false;
   if (isSupervisor()) {
     return [
-      'inicio',
+      'inicio_proxy',
       'tickets',
       'calendario',
       'archivo',
@@ -57,8 +57,9 @@ export function canAccessRoute(path) {
       'clientes',
       'categorias',
       'productos',
+      'cuadre',
       'config',
     ].includes(path);
   }
-  return ['calendario', 'tickets'].includes(path);
+  return ['cuadre', 'tickets', 'calendario'].includes(path);
 }

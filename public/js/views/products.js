@@ -21,6 +21,13 @@ function mountProductosFab() {
   return fab;
 }
 
+function habilitadoBadge(habilitado) {
+  if (String(habilitado).toUpperCase() === 'NO') {
+    return '<span class="badge badge-estado-inactivo">NO</span>';
+  }
+  return '<span class="badge badge-estado-activo">SI</span>';
+}
+
 function buildCategoriaOptions(categorias, selected = '') {
   const options = ['<option value="">Sin categoría</option>'];
   for (const c of categorias) {
@@ -44,11 +51,12 @@ export async function renderProducts(root) {
               <th>Código</th>
               <th>Descripción</th>
               <th>Categoría</th>
+              <th>Habilitado</th>
               <th class="text-end">Acciones</th>
             </tr>
           </thead>
           <tbody id="productosTableBody">
-            <tr><td colspan="4" class="text-center text-muted">Cargando...</td></tr>
+            <tr><td colspan="5" class="text-center text-muted">Cargando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -74,6 +82,13 @@ export async function renderProducts(root) {
               <label class="form-label" for="productoCodcategoria">Categoría</label>
               <select class="form-select form-select-sm" id="productoCodcategoria">
                 <option value="">Sin categoría</option>
+              </select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="productoHabilitado">Habilitado</label>
+              <select class="form-select form-select-sm" id="productoHabilitado" required>
+                <option value="SI">SI</option>
+                <option value="NO">NO</option>
               </select>
             </div>
           </form>
@@ -113,9 +128,12 @@ export async function renderProducts(root) {
       document.getElementById('productoCodigoDisplay').value = producto.codprod;
       document.getElementById('productoDesprod').value = producto.desprod;
       categoriaSelect.value = producto.codcategoria ? String(producto.codcategoria) : '';
+      document.getElementById('productoHabilitado').value =
+        String(producto.habilitado || 'SI').toUpperCase() === 'NO' ? 'NO' : 'SI';
     } else {
       document.getElementById('productoModalLabel').textContent = 'Nuevo producto';
       document.getElementById('productoCodigo').value = '';
+      document.getElementById('productoHabilitado').value = 'SI';
     }
     modal.show();
   }
@@ -125,7 +143,7 @@ export async function renderProducts(root) {
       list = await api.listProductos();
       if (!list.length) {
         tableBody.innerHTML =
-          '<tr><td colspan="4" class="text-center text-muted">Sin registros</td></tr>';
+          '<tr><td colspan="5" class="text-center text-muted">Sin registros</td></tr>';
         return;
       }
       tableBody.innerHTML = list
@@ -135,6 +153,7 @@ export async function renderProducts(root) {
           <td>${p.codprod}</td>
           <td>${escapeHtml(p.desprod)}</td>
           <td>${escapeHtml(p.descategoria || '—')}</td>
+          <td>${habilitadoBadge(p.habilitado)}</td>
           <td class="text-end">
             <div class="d-grid gap-1 d-md-block">
               <button class="btn btn-outline-primary btn-sm btn-edit" data-codprod="${p.codprod}">Editar</button>
@@ -167,7 +186,7 @@ export async function renderProducts(root) {
       });
     } catch (err) {
       tableBody.innerHTML =
-        '<tr><td colspan="4" class="text-danger text-center">Error al cargar</td></tr>';
+        '<tr><td colspan="5" class="text-danger text-center">Error al cargar</td></tr>';
       toastError(err.message);
     }
   }
@@ -181,6 +200,7 @@ export async function renderProducts(root) {
     const body = {
       desprod: document.getElementById('productoDesprod').value.trim(),
       codcategoria: codcategoriaVal ? Number(codcategoriaVal) : null,
+      habilitado: document.getElementById('productoHabilitado').value,
     };
     try {
       if (codprod) {
