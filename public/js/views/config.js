@@ -1,6 +1,7 @@
 import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
 import { confirmAction, toastError, toastSuccess } from '../alerts.js';
+import { bindGuardedClick } from '../submit-guard.js';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -65,7 +66,7 @@ export async function renderConfig(root) {
 
   await bindLogout();
 
-  document.getElementById('btnEliminarFotos').addEventListener('click', async () => {
+  bindGuardedClick(document.getElementById('btnEliminarFotos'), async () => {
     const startDate = document.getElementById('configFotosDesde').value;
     const endDate = document.getElementById('configFotosHasta').value;
     if (!startDate || !endDate) {

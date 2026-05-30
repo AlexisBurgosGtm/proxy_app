@@ -575,6 +575,38 @@ function validateOrden(body) {
   };
 }
 
+function validateOrdenUpdate(body) {
+  const errors = [];
+  const id = Number(body.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    errors.push('ID de orden inválido.');
+  }
+
+  const horaRaw = body.hora != null ? String(body.hora).trim() : '';
+  if (!/^\d{2}:\d{2}$/.test(horaRaw)) {
+    errors.push('La hora debe tener formato HH:MM.');
+  }
+
+  const base = validateOrden(body);
+  errors.push(...base.errors);
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    data: base.valid
+      ? {
+          id,
+          hora: horaRaw,
+          codigo: base.data.codigo,
+          codprod: base.data.codprod,
+          fecha: base.data.fecha,
+          detalles: base.data.detalles,
+          importe: base.data.importe,
+        }
+      : {},
+  };
+}
+
 function validateProducto(body, partial = false) {
   const errors = [];
   const desprod = body.desprod !== undefined ? String(body.desprod).trim() : undefined;
@@ -633,6 +665,7 @@ module.exports = {
   validateCategoria,
   validateProducto,
   validateOrden,
+  validateOrdenUpdate,
   validateFinalizarDia,
   sanitizeDetallesOrden,
   parseDateOnly,

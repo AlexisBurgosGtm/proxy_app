@@ -196,6 +196,14 @@ export function createOrden(body) {
   return post('/ordenes/create', body);
 }
 
+export function updateOrden(body) {
+  return post('/ordenes/update', body);
+}
+
+export function deleteOrden(id) {
+  return post('/ordenes/delete', { id });
+}
+
 export function finalizarDiaCuadre(body) {
   return post('/cuadre/finalizar-dia', body);
 }
@@ -236,6 +244,10 @@ export function listTicketsArchivo(start, end) {
 
 export function listOrdenesArchivo(start, end) {
   return post('/ordenes/archivo', { start, end });
+}
+
+export function listCuadresArchivo(start, end) {
+  return post('/cuadres/archivo', { start, end });
 }
 
 export function listTickets() {

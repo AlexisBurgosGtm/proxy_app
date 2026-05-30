@@ -1,6 +1,7 @@
 import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
 import { toastSuccess, toastError, confirmAction } from '../alerts.js';
+import { bindGuardedSubmit, bindGuardedClick } from '../submit-guard.js';
 
 function escapeHtml(text) {
   if (text === null || text === undefined) return '';
@@ -171,7 +172,7 @@ export async function renderProducts(root) {
         });
       });
       document.querySelectorAll('.btn-delete').forEach((btn) => {
-        btn.addEventListener('click', async () => {
+        bindGuardedClick(btn, async () => {
           const codprod = Number(btn.dataset.codprod);
           const ok = await confirmAction('Eliminar producto', '¿Confirma la eliminación?');
           if (!ok) return;
@@ -193,8 +194,7 @@ export async function renderProducts(root) {
 
   fab.addEventListener('click', () => openModal());
 
-  document.getElementById('productoForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
+  bindGuardedSubmit(document.getElementById('productoForm'), async () => {
     const codprod = document.getElementById('productoCodigo').value;
     const codcategoriaVal = document.getElementById('productoCodcategoria').value;
     const body = {

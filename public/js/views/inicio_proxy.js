@@ -1,6 +1,6 @@
 import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
-import { toastError } from '../alerts.js';
+import { toastError, toastSuccess, confirmAction } from '../alerts.js';
 import { formatDate, formatImporte } from '../format.js';
 import {
   renderImporteLineChartFromOrdenes,
@@ -8,6 +8,7 @@ import {
   renderEmpleadoBarChart,
   destroyDashboardCharts,
 } from '../components/dashboard-chart.js';
+import { bindGuardedSubmit, withSubmitGuard } from '../submit-guard.js';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -27,6 +28,31 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
+function sanitizeDetalles(text, maxLen = 300) {
+  let value = String(text ?? '').trim();
+  value = value.replace(/\0/g, '');
+  value = value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  if (value.length > maxLen) value = value.slice(0, maxLen);
+  return value;
+}
+
+function matchesOrdenSearch(orden, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const haystack = [
+    orden.fecha,
+    orden.hora,
+    orden.empleado_nombre,
+    orden.desprod,
+    orden.descategoria,
+    orden.detalles,
+    orden.importe,
+  ]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+  return haystack.includes(q);
+}
+
 export async function renderInicioProxy(root) {
   updateAppShell('inicio_proxy', 'Inicio');
   const today = todayDate();
@@ -37,6 +63,9 @@ export async function renderInicioProxy(root) {
     importe_por_empleado: [],
     total: 0,
   };
+  let ordenesSearchQuery = '';
+  let empleados = [];
+  let productos = [];
 
   root.innerHTML = `
     <main class="container-fluid py-2">
@@ -64,6 +93,11 @@ export async function renderInicioProxy(root) {
                   </div>
                 </div>
               </form>
+              <div class="mb-2">
+                <label class="form-label visually-hidden" for="ordenesBuscar">Buscar</label>
+                <input type="search" class="form-control form-control-sm" id="ordenesBuscar"
+                  placeholder="Buscar en la tabla…" autocomplete="off">
+              </div>
               <div class="table-responsive eventos-list-wrap">
                 <table class="table table-sm table-hover small mb-0">
                   <thead>
@@ -75,10 +109,11 @@ export async function renderInicioProxy(root) {
                       <th>Categoría</th>
                       <th>Detalles</th>
                       <th class="text-end">Importe</th>
+                      <th class="text-end">Acciones</th>
                     </tr>
                   </thead>
                   <tbody id="ordenesListBody">
-                    <tr><td colspan="7" class="text-center text-muted">Cargando...</td></tr>
+                    <tr><td colspan="8" class="text-center text-muted">Cargando...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -119,23 +154,80 @@ export async function renderInicioProxy(root) {
         </div>
       </div>
     </main>
+    <div class="modal fade" id="ordenEditModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content small">
+          <div class="modal-header modal-header-app py-2">
+            <h5 class="modal-title" id="ordenEditModalLabel">Editar orden</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <form id="ordenEditForm" class="modal-body py-2">
+            <input type="hidden" id="ordenEditId">
+            <div class="mb-2">
+              <label class="form-label" for="ordenEditEmpleado">Empleado</label>
+              <select class="form-select form-select-sm" id="ordenEditEmpleado" required></select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="ordenEditFecha">Fecha</label>
+              <input type="date" class="form-control form-control-sm" id="ordenEditFecha" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="ordenEditHora">Hora</label>
+              <input type="time" class="form-control form-control-sm" id="ordenEditHora" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="ordenEditProducto">Producto</label>
+              <select class="form-select form-select-sm" id="ordenEditProducto" required></select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="ordenEditDetalles">Detalles</label>
+              <input type="text" class="form-control form-control-sm" id="ordenEditDetalles" maxlength="300">
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="ordenEditImporte">Importe</label>
+              <input type="number" class="form-control form-control-sm" id="ordenEditImporte" min="0" step="0.01" required>
+            </div>
+          </form>
+          <div class="modal-footer py-2">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="submit" form="ordenEditForm" class="btn btn-primary btn-sm">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 
   await bindLogout();
 
   const ordenesListBody = document.getElementById('ordenesListBody');
   const totalEl = document.getElementById('ordenesTotalImporte');
+  const ordenEditModal = new bootstrap.Modal(document.getElementById('ordenEditModal'));
+  const ordenEditEmpleado = document.getElementById('ordenEditEmpleado');
+  const ordenEditProducto = document.getElementById('ordenEditProducto');
+  const tableColSpan = 8;
 
-  function renderOrdenesTable(ordenes) {
-    totalEl.textContent = formatImporte(dashboardData.total);
+  function getVisibleOrdenes() {
+    return dashboardData.ordenes.filter((o) => matchesOrdenSearch(o, ordenesSearchQuery));
+  }
 
-    if (!ordenes.length) {
+  function renderOrdenesTable() {
+    const visible = getVisibleOrdenes();
+    const visibleTotal = visible.reduce((sum, o) => sum + Number(o.importe ?? 0), 0);
+    totalEl.textContent = formatImporte(ordenesSearchQuery ? visibleTotal : dashboardData.total);
+
+    if (!dashboardData.ordenes.length) {
       ordenesListBody.innerHTML =
-        '<tr><td colspan="7" class="text-center text-muted">No hay órdenes en el rango seleccionado.</td></tr>';
+        `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay órdenes en el rango seleccionado.</td></tr>`;
       return;
     }
 
-    ordenesListBody.innerHTML = ordenes
+    if (!visible.length) {
+      ordenesListBody.innerHTML =
+        `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay órdenes con ese criterio de búsqueda.</td></tr>`;
+      return;
+    }
+
+    ordenesListBody.innerHTML = visible
       .map(
         (o) => `
         <tr>
@@ -145,10 +237,52 @@ export async function renderInicioProxy(root) {
           <td>${escapeHtml(o.desprod || '—')}</td>
           <td>${escapeHtml(o.descategoria || '—')}</td>
           <td>${escapeHtml(o.detalles || '—')}</td>
-          <td class="text-end text-nowrap">${formatImporte(o.importe)}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(o.importe))}</td>
+          <td class="text-end text-nowrap">
+            <button type="button" class="btn btn-outline-primary btn-sm btn-orden-edit me-1" data-id="${o.id}" title="Editar">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm btn-orden-delete" data-id="${o.id}" title="Eliminar">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </td>
         </tr>`
       )
       .join('');
+  }
+
+  function fillSelectOptions() {
+    ordenEditEmpleado.innerHTML = empleados
+      .map((e) => `<option value="${e.codigo}">${escapeHtml(e.nombre)}</option>`)
+      .join('');
+    ordenEditProducto.innerHTML = productos
+      .map((p) => `<option value="${p.codprod}">${escapeHtml(p.desprod)}</option>`)
+      .join('');
+  }
+
+  function openEditModal(orden) {
+    document.getElementById('ordenEditModalLabel').textContent = `Editar orden #${orden.id}`;
+    document.getElementById('ordenEditId').value = orden.id;
+    ordenEditEmpleado.value = orden.codigo ? String(orden.codigo) : '';
+    document.getElementById('ordenEditFecha').value = orden.fecha || '';
+    const hora = orden.hora && orden.hora.length >= 5 ? orden.hora.slice(0, 5) : '';
+    document.getElementById('ordenEditHora').value = hora;
+    ordenEditProducto.value = orden.codprod ? String(orden.codprod) : '';
+    document.getElementById('ordenEditDetalles').value = orden.detalles || '';
+    document.getElementById('ordenEditImporte').value = orden.importe ?? 0;
+    ordenEditModal.show();
+  }
+
+  async function loadEditSelects() {
+    try {
+      [empleados, productos] = await Promise.all([
+        api.listEmpleados(true),
+        api.listProductos(),
+      ]);
+      fillSelectOptions();
+    } catch (err) {
+      toastError(err.message);
+    }
   }
 
   async function updateCharts() {
@@ -202,11 +336,11 @@ export async function renderInicioProxy(root) {
     }
 
     ordenesListBody.innerHTML =
-      '<tr><td colspan="7" class="text-center text-muted">Cargando...</td></tr>';
+      `<tr><td colspan="${tableColSpan}" class="text-center text-muted">Cargando...</td></tr>`;
 
     try {
       dashboardData = await api.getDashboardOrdenesResumen(desde, hasta);
-      renderOrdenesTable(dashboardData.ordenes);
+      renderOrdenesTable();
       await updateCharts();
     } catch (err) {
       dashboardData = {
@@ -217,7 +351,7 @@ export async function renderInicioProxy(root) {
         total: 0,
       };
       ordenesListBody.innerHTML =
-        '<tr><td colspan="7" class="text-center text-danger">Error al cargar órdenes</td></tr>';
+        `<tr><td colspan="${tableColSpan}" class="text-center text-danger">Error al cargar órdenes</td></tr>`;
       totalEl.textContent = formatImporte(0);
       destroyDashboardCharts();
       toastError(err.message);
@@ -228,16 +362,85 @@ export async function renderInicioProxy(root) {
     e.preventDefault();
   });
 
+  document.getElementById('ordenesBuscar').addEventListener('input', (e) => {
+    ordenesSearchQuery = e.target.value.trim().toLowerCase();
+    renderOrdenesTable();
+  });
+
+  ordenesListBody.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.btn-orden-edit');
+    if (editBtn) {
+      const id = Number(editBtn.dataset.id);
+      const orden = dashboardData.ordenes.find((o) => o.id === id);
+      if (orden) openEditModal(orden);
+      return;
+    }
+
+    const deleteBtn = e.target.closest('.btn-orden-delete');
+    if (!deleteBtn || deleteBtn.disabled) return;
+
+    e.preventDefault();
+    void withSubmitGuard(deleteBtn, async () => {
+      const id = Number(deleteBtn.dataset.id);
+      const ok = await confirmAction('Eliminar orden', '¿Confirma la eliminación de esta orden?');
+      if (!ok) return;
+      try {
+        await api.deleteOrden(id);
+        toastSuccess('Orden eliminada');
+        await loadDashboard();
+      } catch (err) {
+        toastError(err.message);
+      }
+    });
+  });
+
+  bindGuardedSubmit(document.getElementById('ordenEditForm'), async () => {
+    const id = Number(document.getElementById('ordenEditId').value);
+    const horaInput = document.getElementById('ordenEditHora').value;
+    const importe = Number(document.getElementById('ordenEditImporte').value);
+    if (!id) {
+      toastError('Orden no válida.');
+      return;
+    }
+    if (!horaInput) {
+      toastError('Ingrese la hora.');
+      return;
+    }
+    if (Number.isNaN(importe) || importe < 0) {
+      toastError('Ingrese un importe válido.');
+      return;
+    }
+
+    try {
+      await api.updateOrden({
+        id,
+        codigo: Number(ordenEditEmpleado.value),
+        fecha: document.getElementById('ordenEditFecha').value,
+        hora: horaInput.slice(0, 5),
+        codprod: Number(ordenEditProducto.value),
+        detalles: sanitizeDetalles(document.getElementById('ordenEditDetalles').value) || null,
+        importe,
+      });
+      toastSuccess('Orden actualizada');
+      ordenEditModal.hide();
+      await loadDashboard();
+    } catch (err) {
+      toastError(err.message);
+    }
+  });
+
   function onFiltroFechaChange() {
     const desde = document.getElementById('filtroDesde').value;
     const hasta = document.getElementById('filtroHasta').value;
     if (!desde || !hasta) return;
     if (desde > hasta) return;
+    ordenesSearchQuery = document.getElementById('ordenesBuscar').value.trim().toLowerCase();
     loadDashboard();
   }
 
   document.getElementById('filtroDesde').addEventListener('change', onFiltroFechaChange);
   document.getElementById('filtroHasta').addEventListener('change', onFiltroFechaChange);
 
+  await loadEditSelects();
   await loadDashboard();
 }

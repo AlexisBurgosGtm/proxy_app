@@ -1,6 +1,7 @@
 import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
 import { toastSuccess, toastError, confirmAction } from '../alerts.js';
+import { bindGuardedSubmit, bindGuardedClick } from '../submit-guard.js';
 
 function escapeHtml(text) {
   if (text === null || text === undefined) return '';
@@ -121,7 +122,7 @@ export async function renderCategories(root) {
         });
       });
       document.querySelectorAll('.btn-delete').forEach((btn) => {
-        btn.addEventListener('click', async () => {
+        bindGuardedClick(btn, async () => {
           const codcategoria = Number(btn.dataset.codcategoria);
           const ok = await confirmAction('Eliminar categoría', '¿Confirma la eliminación?');
           if (!ok) return;
@@ -143,8 +144,7 @@ export async function renderCategories(root) {
 
   fab.addEventListener('click', () => openModal());
 
-  document.getElementById('categoriaForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
+  bindGuardedSubmit(document.getElementById('categoriaForm'), async () => {
     const codcategoria = document.getElementById('categoriaCodigo').value;
     const body = {
       descategoria: document.getElementById('categoriaDescategoria').value.trim(),

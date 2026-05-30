@@ -8,6 +8,7 @@ const {
   validateCategoria,
   validateProducto,
   validateOrden,
+  validateOrdenUpdate,
   validateFinalizarDia,
   parseDateOnly,
   sanitizeMysqlText,
@@ -110,6 +111,8 @@ function mapOrdenListRow(row) {
 function mapOrdenDashboardRow(row) {
   return {
     id: row.ID ?? row.id,
+    codigo: row.CODIGO ?? row.codigo ?? null,
+    codprod: row.CODPROD ?? row.codprod ?? null,
     fecha: toDateString(row.FECHA ?? row.fecha),
     hora: row.HORA ?? row.hora ?? '',
     empleado_nombre: row.empleado_nombre ?? row.nombre ?? '',
@@ -118,6 +121,14 @@ function mapOrdenDashboardRow(row) {
     detalles: row.DETALLES ?? row.detalles ?? '',
     importe: Number(row.IMPORTE ?? row.importe ?? 0),
   };
+}
+
+async function assertOrdenNotOnClosedDay(res, codigo, fecha) {
+  if (await cuadreExists(codigo, fecha)) {
+    res.status(409).json({ error: 'Este dia ya esta cerrado' });
+    return false;
+  }
+  return true;
 }
 
 function currentTimeHm() {
@@ -470,7 +481,7 @@ router.post(
     }
 
     const ordenesRows = await query(
-      `SELECT o.ID, o.FECHA, o.HORA, o.DETALLES, o.IMPORTE,
+      `SELECT o.ID, o.CODIGO, o.CODPROD, o.FECHA, o.HORA, o.DETALLES, o.IMPORTE,
               p.DESPROD, c.DESCATEGORIA, e.nombre AS empleado_nombre
        FROM ordenes o
        LEFT JOIN productos p ON p.CODPROD = o.CODPROD
@@ -862,6 +873,45 @@ router.post(
 );
 
 router.post(
+  '/cuadres/archivo',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const { start, end } = req.body || {};
+    if (!start || !end) {
+      return res.status(400).json({ error: 'Los parámetros start y end son obligatorios.' });
+    }
+    const startDate = String(start).slice(0, 10);
+    const endDate = String(end).slice(0, 10);
+    if (startDate > endDate) {
+      return res.status(400).json({ error: 'La fecha inicial no puede ser mayor que la final.' });
+    }
+
+    const rows = await query(
+      `SELECT q.ID, q.FECHA, q.IMPORTE, q.EFECTIVO, q.DOCUMENTOS, q.DIFERENCIA, q.OBS,
+              e.nombre AS empleado_nombre
+       FROM cuadres q
+       LEFT JOIN empleados e ON e.codigo = q.CODIGO
+       WHERE q.FECHA >= ? AND q.FECHA <= ?
+       ORDER BY q.FECHA ASC, q.ID ASC`,
+      [startDate, endDate]
+    );
+
+    res.json(
+      rows.map((row) => ({
+        id: row.ID ?? row.id,
+        fecha: toDateString(row.FECHA ?? row.fecha),
+        empleado_nombre: row.empleado_nombre ?? '',
+        importe: Number(row.IMPORTE ?? row.importe ?? 0),
+        efectivo: Number(row.EFECTIVO ?? row.efectivo ?? 0),
+        documentos: Number(row.DOCUMENTOS ?? row.documentos ?? 0),
+        diferencia: Number(row.DIFERENCIA ?? row.diferencia ?? 0),
+        observaciones: row.OBS ?? row.obs ?? '',
+      }))
+    );
+  })
+);
+
+router.post(
   '/ordenes/archivo',
   requireSupervisor,
   asyncHandler(async (req, res) => {
@@ -1226,7 +1276,26 @@ router.post(
     const total = items.reduce((sum, item) => sum + item.importe, 0);
     const diaCerrado = await cuadreExists(codigo, fechaParsed.iso);
 
-    res.json({ items, total, dia_cerrado: diaCerrado });
+    let cuadre = null;
+    if (diaCerrado) {
+      const cuadreRow = await queryOne(
+        `SELECT FECHA, IMPORTE, EFECTIVO, DOCUMENTOS, DIFERENCIA, OBS
+         FROM cuadres WHERE CODIGO = ? AND FECHA = ?`,
+        [codigo, fechaParsed.iso]
+      );
+      if (cuadreRow) {
+        cuadre = {
+          fecha: toDateString(cuadreRow.FECHA ?? cuadreRow.fecha),
+          importe: Number(cuadreRow.IMPORTE ?? cuadreRow.importe ?? 0),
+          efectivo: Number(cuadreRow.EFECTIVO ?? cuadreRow.efectivo ?? 0),
+          documentos: Number(cuadreRow.DOCUMENTOS ?? cuadreRow.documentos ?? 0),
+          diferencia: Number(cuadreRow.DIFERENCIA ?? cuadreRow.diferencia ?? 0),
+          observaciones: cuadreRow.OBS ?? cuadreRow.obs ?? '',
+        };
+      }
+    }
+
+    res.json({ items, total, dia_cerrado: diaCerrado, cuadre });
   })
 );
 
@@ -1298,6 +1367,74 @@ router.post(
     );
 
     res.status(201).json({ id: info.insertId, ok: true });
+  })
+);
+
+router.post(
+  '/ordenes/update',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const result = validateOrdenUpdate(req.body);
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+
+    const existing = await queryOne('SELECT ID, CODIGO, FECHA FROM ordenes WHERE ID = ?', [
+      result.data.id,
+    ]);
+    if (!existing) return res.status(404).json({ error: 'Orden no encontrada.' });
+
+    const fechaAnterior = toDateString(existing.FECHA ?? existing.fecha);
+    if (!(await assertOrdenNotOnClosedDay(res, existing.CODIGO ?? existing.codigo, fechaAnterior))) {
+      return;
+    }
+    if (!(await assertOrdenNotOnClosedDay(res, result.data.codigo, result.data.fecha))) return;
+
+    const empleado = await queryOne('SELECT codigo FROM empleados WHERE codigo = ?', [
+      result.data.codigo,
+    ]);
+    if (!empleado) return res.status(404).json({ error: 'Empleado no encontrado.' });
+
+    const producto = await queryOne('SELECT CODPROD FROM productos WHERE CODPROD = ?', [
+      result.data.codprod,
+    ]);
+    if (!producto) return res.status(400).json({ error: 'El producto no existe.' });
+
+    await execute(
+      `UPDATE ordenes
+       SET CODIGO = ?, FECHA = ?, HORA = ?, CODPROD = ?, DETALLES = ?, IMPORTE = ?
+       WHERE ID = ?`,
+      [
+        result.data.codigo,
+        result.data.fecha,
+        result.data.hora,
+        result.data.codprod,
+        result.data.detalles,
+        result.data.importe,
+        result.data.id,
+      ]
+    );
+
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/ordenes/delete',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.body?.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID de orden inválido.' });
+    }
+
+    const existing = await queryOne('SELECT ID, CODIGO, FECHA FROM ordenes WHERE ID = ?', [id]);
+    if (!existing) return res.status(404).json({ error: 'Orden no encontrada.' });
+
+    const codigo = existing.CODIGO ?? existing.codigo;
+    const fecha = toDateString(existing.FECHA ?? existing.fecha);
+    if (!(await assertOrdenNotOnClosedDay(res, codigo, fecha))) return;
+
+    await execute('DELETE FROM ordenes WHERE ID = ?', [id]);
+    res.json({ ok: true });
   })
 );
 

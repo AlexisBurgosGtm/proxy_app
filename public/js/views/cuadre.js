@@ -2,7 +2,8 @@ import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
 import { getEmpleado, isSupervisor } from '../auth.js';
 import { toastSuccess, toastError, toastWarning } from '../alerts.js';
-import { formatImporte } from '../format.js';
+import { formatDate, formatImporte } from '../format.js';
+import { bindGuardedSubmit, bindGuardedClick, withSubmitGuard } from '../submit-guard.js';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -36,6 +37,151 @@ function parseAmount(value) {
   return Number.isNaN(num) ? 0 : num;
 }
 
+function formatHoraNow() {
+  const d = new Date();
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+const CUADRE_PRINT_PAGE_STYLES = `
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 1.25rem;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-size: 14px;
+    color: #111;
+    background: #fff;
+  }
+  .cuadre-print-sheet {
+    max-width: 480px;
+    margin: 0 auto;
+  }
+  .cuadre-print-sheet h2 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    text-align: center;
+    margin: 0 0 1rem;
+  }
+  .cuadre-print-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .cuadre-print-table th,
+  .cuadre-print-table td {
+    border: 1px solid #333;
+    padding: 0.5rem 0.65rem;
+    vertical-align: top;
+  }
+  .cuadre-print-table th {
+    width: 42%;
+    text-align: left;
+    font-weight: 600;
+    background: #f5f5f5;
+  }
+  .cuadre-print-table td {
+    text-align: right;
+  }
+  .cuadre-print-table td.cuadre-print-text-left {
+    text-align: left;
+  }
+  @media print {
+    body { padding: 0.5rem; }
+  }
+`;
+
+function buildCuadrePrintHtml(data) {
+  const obs = data.observaciones ? escapeHtml(data.observaciones) : '—';
+  return `
+    <div class="cuadre-print-sheet">
+      <h2>PROXY — Cuadre del día</h2>
+      <table class="cuadre-print-table">
+        <tr>
+          <th>Nombre empleado</th>
+          <td class="cuadre-print-text-left">${escapeHtml(data.empleadoNombre)}</td>
+        </tr>
+        <tr>
+          <th>Fecha</th>
+          <td>${escapeHtml(formatDate(data.fecha))}</td>
+        </tr>
+        <tr>
+          <th>Hora</th>
+          <td>${escapeHtml(data.hora)}</td>
+        </tr>
+        <tr>
+          <th>Observaciones</th>
+          <td class="cuadre-print-text-left">${obs}</td>
+        </tr>
+        <tr>
+          <th>Importe a cuadrar</th>
+          <td>${escapeHtml(formatImporte(data.importe))}</td>
+        </tr>
+        <tr>
+          <th>Efectivo</th>
+          <td>${escapeHtml(formatImporte(data.efectivo))}</td>
+        </tr>
+        <tr>
+          <th>Documentos</th>
+          <td>${escapeHtml(formatImporte(data.documentos))}</td>
+        </tr>
+        <tr>
+          <th>Diferencia</th>
+          <td>${escapeHtml(formatImporte(data.diferencia))}</td>
+        </tr>
+      </table>
+    </div>`;
+}
+
+function buildCuadrePrintDocument(data, autoPrint = false) {
+  const printScript = autoPrint
+    ? `<script>window.addEventListener('load',function(){window.focus();window.print();});<\/script>`
+    : '';
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>Cuadre del día — PROXY</title>
+  <style>${CUADRE_PRINT_PAGE_STYLES}</style>
+</head>
+<body>
+  ${buildCuadrePrintHtml(data)}
+  ${printScript}
+</body>
+</html>`;
+}
+
+function openCuadrePrintTab(data, autoPrint = true) {
+  const html = buildCuadrePrintDocument(data, autoPrint);
+  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+
+  const link = document.createElement('a');
+  link.href = url;
+  link.target = '_blank';
+  link.rel = 'noopener noreferrer';
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+
+  setTimeout(() => URL.revokeObjectURL(url), 120000);
+  return true;
+}
+
+function prepareCuadrePrintTab() {
+  return window.open('about:blank', '_blank');
+}
+
+function fillCuadrePrintTab(tab, data, autoPrint = true) {
+  if (!tab || tab.closed) {
+    openCuadrePrintTab(data, autoPrint);
+    return false;
+  }
+  tab.document.open();
+  tab.document.write(buildCuadrePrintDocument(data, autoPrint));
+  tab.document.close();
+  tab.focus();
+  return true;
+}
+
 function matchesOrdenSearch(orden, query) {
   if (!query) return true;
   const q = query.toLowerCase();
@@ -67,16 +213,17 @@ function mountCuadreOrdenesFab(onClick) {
   return fab;
 }
 
-function mountFinalizarDiaFab(onClick) {
-  document.getElementById('btnFabFinalizarDia')?.remove();
+function mountCuadreActionFab({ id, label, iconClass, text, onClick }) {
+  document.getElementById(id)?.remove();
   const fab = document.createElement('button');
   fab.type = 'button';
-  fab.id = 'btnFabFinalizarDia';
+  fab.id = id;
   fab.className = 'btn btn-primary fab-finalizar-dia d-none';
-  fab.setAttribute('aria-label', 'Finalizar día');
-  fab.innerHTML =
-    '<i class="fa-solid fa-coins"></i><span>Finalizar Día</span>';
-  fab.addEventListener('click', onClick);
+  fab.setAttribute('aria-label', label);
+  fab.innerHTML = `<i class="fa-solid ${iconClass}"></i><span>${text}</span>`;
+  fab.addEventListener('click', () => {
+    void withSubmitGuard(fab, () => onClick());
+  });
   document.body.appendChild(fab);
   return fab;
 }
@@ -191,6 +338,23 @@ export async function renderCuadre(root) {
         </div>
       </div>
     </div>
+    <div class="modal fade cuadre-print-modal" id="cuadrePrintModal" tabindex="-1">
+      <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+          <div class="modal-header modal-header-app py-2 cuadre-print-no-print">
+            <h5 class="modal-title">Comprobante de cuadre</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body py-3" id="cuadrePrintBody"></div>
+          <div class="modal-footer py-2 cuadre-print-no-print">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cerrar</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnCuadrePrint">
+              <i class="fa-solid fa-print me-1"></i>Imprimir
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
     <div class="modal fade" id="cuadreFinalizarModal" tabindex="-1">
       <div class="modal-dialog modal-lg">
         <div class="modal-content small">
@@ -241,6 +405,8 @@ export async function renderCuadre(root) {
   const totalEl = document.getElementById('cuadreTotalValor');
   const ordenModal = new bootstrap.Modal(document.getElementById('cuadreOrdenModal'));
   const finalizarModal = new bootstrap.Modal(document.getElementById('cuadreFinalizarModal'));
+  const printModal = new bootstrap.Modal(document.getElementById('cuadrePrintModal'));
+  const printBody = document.getElementById('cuadrePrintBody');
   const ordenForm = document.getElementById('cuadreOrdenForm');
   const finalizarForm = document.getElementById('cuadreFinalizarForm');
   const ordenDetalles = document.getElementById('cuadreOrdenDetalles');
@@ -260,10 +426,24 @@ export async function renderCuadre(root) {
   let selectedProduct = null;
   let totalDia = 0;
   let diaCerrado = false;
+  let cuadreCerradoData = null;
   let fabFinalizarDia = null;
+  let fabReimprimirCuadre = null;
   let ordenesDia = [];
   let ordenesSearchQuery = '';
   let productosSearchQuery = '';
+  let lastCuadrePrintData = null;
+
+  function getEmpleadoNombre() {
+    const opt = empleadoSelect.options[empleadoSelect.selectedIndex];
+    return opt?.text?.trim() || '—';
+  }
+
+  function showCuadrePrint(data) {
+    lastCuadrePrintData = data;
+    printBody.innerHTML = buildCuadrePrintHtml(data);
+    printModal.show();
+  }
 
   function updateFinalizarCalculos() {
     const efectivo = parseAmount(finalizarEfectivo.value);
@@ -289,12 +469,60 @@ export async function renderCuadre(root) {
     finalizarModal.show();
   }
 
-  function updateFabVisibility() {
-    if (!fabFinalizarDia) return;
-    fabFinalizarDia.classList.toggle('d-none', diaCerrado);
+  function hasCuadreSelection() {
+    return Boolean(Number(empleadoSelect.value) && fechaInput.value);
   }
 
-  fabFinalizarDia = mountFinalizarDiaFab(openFinalizarModal);
+  function buildPrintDataFromCuadre(cuadre) {
+    return {
+      empleadoNombre: getEmpleadoNombre(),
+      fecha: cuadre.fecha || fechaInput.value,
+      hora: '—',
+      observaciones: cuadre.observaciones || '',
+      importe: Number(cuadre.importe ?? 0),
+      efectivo: Number(cuadre.efectivo ?? 0),
+      documentos: Number(cuadre.documentos ?? 0),
+      diferencia: Number(cuadre.diferencia ?? 0),
+    };
+  }
+
+  function reimprimirCuadre() {
+    if (!cuadreCerradoData) {
+      toastError('No se encontró el cuadre guardado para este día.');
+      return;
+    }
+    const printData = buildPrintDataFromCuadre(cuadreCerradoData);
+    showCuadrePrint(printData);
+    openCuadrePrintTab(printData, true);
+  }
+
+  function updateFabVisibility() {
+    const visible = hasCuadreSelection();
+    if (fabFinalizarDia) {
+      fabFinalizarDia.classList.toggle('d-none', !visible || diaCerrado);
+    }
+    if (fabReimprimirCuadre) {
+      fabReimprimirCuadre.classList.toggle(
+        'd-none',
+        !visible || !diaCerrado || !cuadreCerradoData
+      );
+    }
+  }
+
+  fabFinalizarDia = mountCuadreActionFab({
+    id: 'btnFabFinalizarDia',
+    label: 'Finalizar día',
+    iconClass: 'fa-coins',
+    text: 'Finalizar Día',
+    onClick: openFinalizarModal,
+  });
+  fabReimprimirCuadre = mountCuadreActionFab({
+    id: 'btnFabReimprimirCuadre',
+    label: 'Reimprimir cuadre',
+    iconClass: 'fa-print',
+    text: 'Reimprimir cuadre',
+    onClick: reimprimirCuadre,
+  });
   mountCuadreOrdenesFab(openOrdenesListModal);
 
   function renderOrdenesListTable() {
@@ -441,6 +669,7 @@ export async function renderCuadre(root) {
       items = [];
       totalDia = 0;
       diaCerrado = false;
+      cuadreCerradoData = null;
       updateFabVisibility();
       productosSearchQuery = '';
       productosBuscar.value = '';
@@ -458,6 +687,7 @@ export async function renderCuadre(root) {
       items = data.items;
       totalDia = Number(data.total) || 0;
       diaCerrado = Boolean(data.dia_cerrado);
+      cuadreCerradoData = diaCerrado && data.cuadre ? data.cuadre : null;
       totalEl.textContent = formatImporte(totalDia);
       updateFabVisibility();
       renderProductosTable();
@@ -465,6 +695,7 @@ export async function renderCuadre(root) {
       items = [];
       totalDia = 0;
       diaCerrado = false;
+      cuadreCerradoData = null;
       updateFabVisibility();
       tableBody.innerHTML =
         '<tr><td colspan="3" class="text-danger text-center">Error al cargar</td></tr>';
@@ -473,8 +704,7 @@ export async function renderCuadre(root) {
     }
   }
 
-  ordenForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  bindGuardedSubmit(ordenForm, async () => {
     const codigo = Number(empleadoSelect.value);
     const fecha = fechaInput.value;
     if (!selectedProduct || !codigo || !fecha) {
@@ -510,8 +740,7 @@ export async function renderCuadre(root) {
     }
   });
 
-  finalizarForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
+  bindGuardedSubmit(finalizarForm, async () => {
     const codigo = Number(empleadoSelect.value);
     const fecha = fechaInput.value;
     if (!codigo || !fecha) {
@@ -530,6 +759,9 @@ export async function renderCuadre(root) {
 
     const efectivo = parseAmount(finalizarEfectivo.value);
     const documentos = parseAmount(finalizarDocumentos.value);
+    const horaCierre = formatHoraNow();
+
+    const printTab = prepareCuadrePrintTab();
 
     try {
       await api.finalizarDiaCuadre({
@@ -540,16 +772,41 @@ export async function renderCuadre(root) {
         documentos,
         observaciones: obs || null,
       });
+      const suma = Math.round((efectivo + documentos) * 100) / 100;
+      const diferencia = Math.round((totalDia - suma) * 100) / 100;
+      const printData = {
+        empleadoNombre: getEmpleadoNombre(),
+        fecha,
+        hora: horaCierre,
+        observaciones: obs,
+        importe: totalDia,
+        efectivo,
+        documentos,
+        diferencia,
+      };
       toastSuccess('Día finalizado');
       finalizarModal.hide();
+      showCuadrePrint(printData);
+      if (!fillCuadrePrintTab(printTab, printData, true)) {
+        toastWarning('Use el botón Imprimir si no se abrió la pestaña del comprobante.');
+      }
       await loadCuadre();
     } catch (err) {
+      if (printTab && !printTab.closed) printTab.close();
       toastError(err.message);
     }
   });
 
   finalizarEfectivo.addEventListener('input', updateFinalizarCalculos);
   finalizarDocumentos.addEventListener('input', updateFinalizarCalculos);
+
+  bindGuardedClick(document.getElementById('btnCuadrePrint'), () => {
+    if (!lastCuadrePrintData) {
+      toastError('No hay comprobante para imprimir.');
+      return;
+    }
+    openCuadrePrintTab(lastCuadrePrintData, true);
+  });
 
   ordenesBuscar.addEventListener('input', () => {
     ordenesSearchQuery = ordenesBuscar.value.trim().toLowerCase();

@@ -4,6 +4,7 @@ import { isSupervisor } from '../auth.js';
 import { toastSuccess, toastError, confirmAction } from '../alerts.js';
 import { formatDate } from '../format.js';
 import { renderTicketDetailHtml, bindPhotoZoom } from '../components/ticket-detail.js';
+import { bindGuardedSubmit, bindGuardedClick } from '../submit-guard.js';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -414,8 +415,7 @@ export async function renderTickets(root) {
     });
   }
 
-  document.getElementById('finalizarTicketForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
+  bindGuardedSubmit(document.getElementById('finalizarTicketForm'), async () => {
     const id = Number(document.getElementById('finalizarTicketId').value);
 
     try {
@@ -530,7 +530,7 @@ export async function renderTickets(root) {
       });
 
       document.querySelectorAll('.btn-ticket-delete').forEach((btn) => {
-        btn.addEventListener('click', async () => {
+        bindGuardedClick(btn, async () => {
           const id = Number(btn.dataset.id);
           const ok = await confirmAction('Eliminar ticket', '¿Confirma la eliminación?');
           if (!ok) return;
@@ -548,8 +548,7 @@ export async function renderTickets(root) {
     const fabBtn = mountTicketsFab();
     fabBtn.addEventListener('click', openCreateModal);
 
-    document.getElementById('ticketForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
+    bindGuardedSubmit(document.getElementById('ticketForm'), async () => {
       const id = document.getElementById('ticketId').value;
       const empleadoVal = document.getElementById('ticketEmpleado').value;
       const body = {
@@ -580,8 +579,7 @@ export async function renderTickets(root) {
       }
     });
 
-    document.getElementById('asignarTicketForm').addEventListener('submit', async (e) => {
-      e.preventDefault();
+    bindGuardedSubmit(document.getElementById('asignarTicketForm'), async () => {
       const id = Number(document.getElementById('asignarTicketId').value);
       const codigo_empleado = Number(document.getElementById('asignarTicketEmpleado').value);
       try {

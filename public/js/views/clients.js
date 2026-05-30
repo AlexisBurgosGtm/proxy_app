@@ -1,6 +1,7 @@
 import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
 import { toastSuccess, toastError, confirmAction } from '../alerts.js';
+import { bindGuardedSubmit, bindGuardedClick } from '../submit-guard.js';
 
 function escapeHtml(text) {
   if (text === null || text === undefined) return '';
@@ -144,7 +145,7 @@ export async function renderClients(root) {
         });
       });
       document.querySelectorAll('.btn-delete').forEach((btn) => {
-        btn.addEventListener('click', async () => {
+        bindGuardedClick(btn, async () => {
           const codigo = Number(btn.dataset.codigo);
           const ok = await confirmAction('Eliminar cliente', '¿Confirma la eliminación?');
           if (!ok) return;
@@ -165,8 +166,7 @@ export async function renderClients(root) {
 
   document.getElementById('btnNuevoCliente').addEventListener('click', () => openModal());
 
-  document.getElementById('clienteForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
+  bindGuardedSubmit(document.getElementById('clienteForm'), async () => {
     const codigo = document.getElementById('clienteCodigo').value;
     const telefono = document.getElementById('clienteTelefono').value.trim();
     if (!/^\d{8}$/.test(telefono)) {

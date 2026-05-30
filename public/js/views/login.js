@@ -2,6 +2,7 @@ import * as api from '../api.js';
 import { setSession, getDefaultRoute } from '../auth.js';
 import { navigate } from '../router.js';
 import { showError, toastSuccess } from '../alerts.js';
+import { bindGuardedSubmit } from '../submit-guard.js';
 
 export async function renderLogin(root) {
   root.innerHTML = `
@@ -23,8 +24,8 @@ export async function renderLogin(root) {
                 <label for="loginClave" class="form-label">Clave</label>
                 <input type="password" class="form-control form-control-sm" id="loginClave" autocomplete="current-password" required>
               </div>
-              <button type="submit" class="btn btn-primary btn-sm w-100">
-                <i class="fa-solid fa-lock me-1"></i>Ingresar
+              <button type="submit" class="btn btn-primary btn-lg login-submit-btn w-100">
+                <i class="fa-solid fa-lock me-2"></i>Ingresar
               </button>
             </form>
           </div>
@@ -41,8 +42,7 @@ export async function renderLogin(root) {
     document.getElementById('loginBuildLabel').textContent = 'Modificación #0';
   }
 
-  document.getElementById('loginForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
+  bindGuardedSubmit(document.getElementById('loginForm'), async () => {
     const nombre = document.getElementById('loginNombre').value.trim();
     const clave = document.getElementById('loginClave').value;
 

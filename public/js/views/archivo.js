@@ -7,6 +7,7 @@ import { exportRowsToExcel } from '../export-excel.js';
 
 const TIPO_TICKETS = 'TICKETS';
 const TIPO_ORDENES = 'ORDENES';
+const TIPO_CUADRES = 'CUADRES';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -67,6 +68,23 @@ function matchesOrdenSearch(orden, query) {
   return haystack.includes(q);
 }
 
+function matchesCuadreSearch(cuadre, query) {
+  if (!query) return true;
+  const q = query.toLowerCase();
+  const haystack = [
+    cuadre.fecha,
+    cuadre.empleado_nombre,
+    cuadre.importe,
+    cuadre.efectivo,
+    cuadre.documentos,
+    cuadre.diferencia,
+    cuadre.observaciones,
+  ]
+    .map((v) => String(v || '').toLowerCase())
+    .join(' ');
+  return haystack.includes(q);
+}
+
 const TICKET_HEADERS = [
   { key: 'inicio', label: 'Inicio' },
   { key: 'fin', label: 'Fin' },
@@ -87,12 +105,23 @@ const ORDEN_HEADERS = [
   { key: 'importe', label: 'Importe', align: 'end' },
 ];
 
+const CUADRE_HEADERS = [
+  { key: 'fecha', label: 'Fecha' },
+  { key: 'empleado', label: 'Empleado' },
+  { key: 'importe', label: 'Importe', align: 'end' },
+  { key: 'efectivo', label: 'Efectivo', align: 'end' },
+  { key: 'documentos', label: 'Documentos', align: 'end' },
+  { key: 'diferencia', label: 'Diferencia', align: 'end' },
+  { key: 'observaciones', label: 'Observaciones' },
+];
+
 export async function renderArchivo(root) {
   updateAppShell('archivo', 'Archivo');
   const { start, end } = monthRange();
   let tipoTransaccion = TIPO_TICKETS;
   let tickets = [];
   let ordenes = [];
+  let cuadres = [];
   let searchQuery = '';
   let detailModal = null;
 
@@ -110,6 +139,7 @@ export async function renderArchivo(root) {
                 <select class="form-select form-select-sm" id="archivoTipoTransaccion">
                   <option value="${TIPO_TICKETS}">TICKETS</option>
                   <option value="${TIPO_ORDENES}">ORDENES</option>
+                  <option value="${TIPO_CUADRES}">CUADRES</option>
                 </select>
               </div>
               <div class="col-md-3">
@@ -172,12 +202,32 @@ export async function renderArchivo(root) {
     return tipoTransaccion === TIPO_TICKETS;
   }
 
+  function isOrdenes() {
+    return tipoTransaccion === TIPO_ORDENES;
+  }
+
+  function isCuadres() {
+    return tipoTransaccion === TIPO_CUADRES;
+  }
+
+  function getHeaders() {
+    if (isTickets()) return TICKET_HEADERS;
+    if (isOrdenes()) return ORDEN_HEADERS;
+    return CUADRE_HEADERS;
+  }
+
+  function getEmptyLabel() {
+    if (isTickets()) return 'tickets';
+    if (isOrdenes()) return 'órdenes';
+    return 'cuadres';
+  }
+
   function tableColSpan() {
-    return isTickets() ? TICKET_HEADERS.length : ORDEN_HEADERS.length;
+    return getHeaders().length;
   }
 
   function renderTableHead() {
-    const headers = isTickets() ? TICKET_HEADERS : ORDEN_HEADERS;
+    const headers = getHeaders();
     tableHead.innerHTML = `
       <tr>
         ${headers
@@ -205,15 +255,31 @@ export async function renderArchivo(root) {
     return ordenes.filter((o) => matchesOrdenSearch(o, searchQuery));
   }
 
+  function getVisibleCuadres() {
+    return cuadres.filter((c) => matchesCuadreSearch(c, searchQuery));
+  }
+
+  function getVisibleRows() {
+    if (isTickets()) return getVisibleTickets();
+    if (isOrdenes()) return getVisibleOrdenes();
+    return getVisibleCuadres();
+  }
+
+  function getSourceRows() {
+    if (isTickets()) return tickets;
+    if (isOrdenes()) return ordenes;
+    return cuadres;
+  }
+
+  function rowImporte(row) {
+    if (isTickets()) {
+      return row.totalprecio != null ? Number(row.totalprecio) : 0;
+    }
+    return Number(row.importe ?? 0);
+  }
+
   function updateTotalImporte(visibleRows) {
-    const total = visibleRows.reduce((sum, row) => {
-      const value = isTickets()
-        ? row.totalprecio != null
-          ? Number(row.totalprecio)
-          : 0
-        : Number(row.importe ?? 0);
-      return sum + value;
-    }, 0);
+    const total = visibleRows.reduce((sum, row) => sum + rowImporte(row), 0);
     document.getElementById('archivoTotalImporte').textContent = formatImporte(total);
   }
 
@@ -273,11 +339,28 @@ export async function renderArchivo(root) {
       .join('');
   }
 
+  function renderCuadresTable(visible) {
+    tableBody.innerHTML = visible
+      .map(
+        (c) => `
+        <tr>
+          <td class="text-nowrap">${escapeHtml(formatDate(c.fecha))}</td>
+          <td>${escapeHtml(c.empleado_nombre || 'Sin asignar')}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(c.importe))}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(c.efectivo))}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(c.documentos))}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(c.diferencia))}</td>
+          <td>${escapeHtml(c.observaciones || '—')}</td>
+        </tr>`
+      )
+      .join('');
+  }
+
   function renderTable() {
     const colSpan = tableColSpan();
-    const emptyLabel = isTickets() ? 'tickets' : 'órdenes';
-    const visible = isTickets() ? getVisibleTickets() : getVisibleOrdenes();
-    const source = isTickets() ? tickets : ordenes;
+    const emptyLabel = getEmptyLabel();
+    const visible = getVisibleRows();
+    const source = getSourceRows();
 
     updateTotalImporte(visible);
 
@@ -295,8 +378,10 @@ export async function renderArchivo(root) {
 
     if (isTickets()) {
       renderTicketsTable(visible);
-    } else {
+    } else if (isOrdenes()) {
       renderOrdenesTable(visible);
+    } else {
+      renderCuadresTable(visible);
     }
   }
 
@@ -333,26 +418,55 @@ export async function renderArchivo(root) {
       return;
     }
 
-    const visible = getVisibleOrdenes();
+    if (isOrdenes()) {
+      const visible = getVisibleOrdenes();
+      if (!visible.length) {
+        toastError('No hay datos para exportar con el filtro actual.');
+        return;
+      }
+
+      const rows = [
+        ['Fecha', 'Hora', 'Empleado', 'Producto', 'Categoría', 'Importe'],
+        ...visible.map((o) => [
+          formatDate(o.fecha),
+          o.hora || '',
+          o.empleado_nombre || 'Sin asignar',
+          o.desprod || '',
+          o.descategoria || '',
+          Number(o.importe ?? 0),
+        ]),
+      ];
+
+      try {
+        await exportRowsToExcel(rows, 'Ordenes', `archivo-ordenes_${desde}_${hasta}.xlsx`);
+        toastSuccess('Archivo Excel generado');
+      } catch (err) {
+        toastError(err.message || 'No se pudo exportar a Excel.');
+      }
+      return;
+    }
+
+    const visible = getVisibleCuadres();
     if (!visible.length) {
       toastError('No hay datos para exportar con el filtro actual.');
       return;
     }
 
     const rows = [
-      ['Fecha', 'Hora', 'Empleado', 'Producto', 'Categoría', 'Importe'],
-      ...visible.map((o) => [
-        formatDate(o.fecha),
-        o.hora || '',
-        o.empleado_nombre || 'Sin asignar',
-        o.desprod || '',
-        o.descategoria || '',
-        Number(o.importe ?? 0),
+      ['Fecha', 'Empleado', 'Importe', 'Efectivo', 'Documentos', 'Diferencia', 'Observaciones'],
+      ...visible.map((c) => [
+        formatDate(c.fecha),
+        c.empleado_nombre || 'Sin asignar',
+        Number(c.importe ?? 0),
+        Number(c.efectivo ?? 0),
+        Number(c.documentos ?? 0),
+        Number(c.diferencia ?? 0),
+        c.observaciones || '',
       ]),
     ];
 
     try {
-      await exportRowsToExcel(rows, 'Ordenes', `archivo-ordenes_${desde}_${hasta}.xlsx`);
+      await exportRowsToExcel(rows, 'Cuadres', `archivo-cuadres_${desde}_${hasta}.xlsx`);
       toastSuccess('Archivo Excel generado');
     } catch (err) {
       toastError(err.message || 'No se pudo exportar a Excel.');
@@ -374,12 +488,15 @@ export async function renderArchivo(root) {
 
     try {
       searchQuery = document.getElementById('archivoSearch').value.trim();
+      tickets = [];
+      ordenes = [];
+      cuadres = [];
       if (isTickets()) {
         tickets = await api.listTicketsArchivo(desde, hasta);
-        ordenes = [];
-      } else {
+      } else if (isOrdenes()) {
         ordenes = await api.listOrdenesArchivo(desde, hasta);
-        tickets = [];
+      } else {
+        cuadres = await api.listCuadresArchivo(desde, hasta);
       }
       renderTable();
     } catch (err) {
@@ -395,6 +512,7 @@ export async function renderArchivo(root) {
     renderTableHead();
     tickets = [];
     ordenes = [];
+    cuadres = [];
     loadList();
   }
 

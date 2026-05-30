@@ -1,6 +1,7 @@
 import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
 import { toastSuccess, toastError, confirmAction } from '../alerts.js';
+import { bindGuardedSubmit, bindGuardedClick } from '../submit-guard.js';
 
 function escapeHtml(text) {
   const div = document.createElement('div');
@@ -191,7 +192,7 @@ export async function renderEmployees(root) {
         });
       });
       document.querySelectorAll('.btn-delete').forEach((btn) => {
-        btn.addEventListener('click', async () => {
+        bindGuardedClick(btn, async () => {
           const codigo = Number(btn.dataset.codigo);
           const ok = await confirmAction('Eliminar empleado', '¿Confirma la eliminación?');
           if (!ok) return;
@@ -213,8 +214,7 @@ export async function renderEmployees(root) {
 
   document.getElementById('btnNuevoEmpleado').addEventListener('click', () => openModal());
 
-  document.getElementById('empleadoForm').addEventListener('submit', async (e) => {
-    e.preventDefault();
+  bindGuardedSubmit(document.getElementById('empleadoForm'), async () => {
     const codigo = document.getElementById('empleadoCodigo').value;
     const clave = document.getElementById('empleadoClave').value.trim();
     const color = colorHex.value.trim();
