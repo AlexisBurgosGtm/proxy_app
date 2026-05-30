@@ -590,10 +590,11 @@ function validateOrdenUpdate(body) {
   const base = validateOrden(body);
   errors.push(...base.errors);
 
+  const valid = errors.length === 0 && base.valid;
   return {
-    valid: errors.length === 0,
+    valid,
     errors,
-    data: base.valid
+    data: valid
       ? {
           id,
           hora: horaRaw,

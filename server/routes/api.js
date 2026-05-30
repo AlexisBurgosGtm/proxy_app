@@ -109,8 +109,9 @@ function mapOrdenListRow(row) {
 }
 
 function mapOrdenDashboardRow(row) {
+  const rawId = row.ID ?? row.id;
   return {
-    id: row.ID ?? row.id,
+    id: rawId != null ? Number(rawId) : null,
     codigo: row.CODIGO ?? row.codigo ?? null,
     codprod: row.CODPROD ?? row.codprod ?? null,
     fecha: toDateString(row.FECHA ?? row.fecha),
@@ -1329,6 +1330,9 @@ router.post(
 router.post(
   '/ordenes/create',
   asyncHandler(async (req, res) => {
+    if (req.body?.id != null && req.body.id !== '') {
+      return res.status(400).json({ error: 'Use la opción de editar para modificar una orden existente.' });
+    }
     const result = validateOrden(req.body);
     if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
     if (!assertCuadreEmpleadoAccess(req, res, result.data.codigo)) return;
@@ -1398,7 +1402,7 @@ router.post(
     ]);
     if (!producto) return res.status(400).json({ error: 'El producto no existe.' });
 
-    await execute(
+    const updateResult = await execute(
       `UPDATE ordenes
        SET CODIGO = ?, FECHA = ?, HORA = ?, CODPROD = ?, DETALLES = ?, IMPORTE = ?
        WHERE ID = ?`,
@@ -1412,6 +1416,10 @@ router.post(
         result.data.id,
       ]
     );
+
+    if (!updateResult.affectedRows) {
+      return res.status(404).json({ error: 'No se pudo actualizar la orden.' });
+    }
 
     res.json({ ok: true });
   })

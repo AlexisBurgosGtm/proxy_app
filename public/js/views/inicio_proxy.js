@@ -8,7 +8,7 @@ import {
   renderEmpleadoBarChart,
   destroyDashboardCharts,
 } from '../components/dashboard-chart.js';
-import { bindGuardedSubmit, withSubmitGuard } from '../submit-guard.js';
+import { bindGuardedClick, withSubmitGuard } from '../submit-guard.js';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -54,6 +54,7 @@ function matchesOrdenSearch(orden, query) {
 }
 
 export async function renderInicioProxy(root) {
+  document.querySelectorAll('#ordenEditModal').forEach((el) => el.remove());
   updateAppShell('inicio_proxy', 'Inicio');
   const today = todayDate();
   let dashboardData = {
@@ -190,7 +191,7 @@ export async function renderInicioProxy(root) {
           </form>
           <div class="modal-footer py-2">
             <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-            <button type="submit" form="ordenEditForm" class="btn btn-primary btn-sm">Guardar</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnOrdenEditGuardar">Guardar</button>
           </div>
         </div>
       </div>
@@ -371,7 +372,7 @@ export async function renderInicioProxy(root) {
     const editBtn = e.target.closest('.btn-orden-edit');
     if (editBtn) {
       const id = Number(editBtn.dataset.id);
-      const orden = dashboardData.ordenes.find((o) => o.id === id);
+      const orden = dashboardData.ordenes.find((o) => Number(o.id) === id);
       if (orden) openEditModal(orden);
       return;
     }
@@ -394,11 +395,15 @@ export async function renderInicioProxy(root) {
     });
   });
 
-  bindGuardedSubmit(document.getElementById('ordenEditForm'), async () => {
+  document.getElementById('ordenEditForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+  });
+
+  async function saveOrdenEdit() {
     const id = Number(document.getElementById('ordenEditId').value);
     const horaInput = document.getElementById('ordenEditHora').value;
     const importe = Number(document.getElementById('ordenEditImporte').value);
-    if (!id) {
+    if (!Number.isInteger(id) || id <= 0) {
       toastError('Orden no válida.');
       return;
     }
@@ -411,19 +416,23 @@ export async function renderInicioProxy(root) {
       return;
     }
 
+    await api.updateOrden({
+      id,
+      codigo: Number(ordenEditEmpleado.value),
+      fecha: document.getElementById('ordenEditFecha').value,
+      hora: horaInput.slice(0, 5),
+      codprod: Number(ordenEditProducto.value),
+      detalles: sanitizeDetalles(document.getElementById('ordenEditDetalles').value) || null,
+      importe,
+    });
+    toastSuccess('Orden actualizada');
+    ordenEditModal.hide();
+    await loadDashboard();
+  }
+
+  bindGuardedClick(document.getElementById('btnOrdenEditGuardar'), async () => {
     try {
-      await api.updateOrden({
-        id,
-        codigo: Number(ordenEditEmpleado.value),
-        fecha: document.getElementById('ordenEditFecha').value,
-        hora: horaInput.slice(0, 5),
-        codprod: Number(ordenEditProducto.value),
-        detalles: sanitizeDetalles(document.getElementById('ordenEditDetalles').value) || null,
-        importe,
-      });
-      toastSuccess('Orden actualizada');
-      ordenEditModal.hide();
-      await loadDashboard();
+      await saveOrdenEdit();
     } catch (err) {
       toastError(err.message);
     }

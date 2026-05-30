@@ -38,7 +38,7 @@ function removeFloatingActions() {
 }
 
 function removeDetachedModals() {
-  document.querySelectorAll('body > .modal').forEach((el) => el.remove());
+  document.querySelectorAll('body .modal').forEach((el) => el.remove());
   document.querySelectorAll('.modal-backdrop').forEach((el) => el.remove());
   document.body.classList.remove('modal-open');
   document.body.style.removeProperty('overflow');

@@ -66,8 +66,11 @@ export async function withSubmitGuard(source, fn) {
  * @param {(e: SubmitEvent) => Promise<void>|void} handler
  */
 export function bindGuardedSubmit(form, handler) {
+  if (!form || form.dataset.submitGuardBound === '1') return;
+  form.dataset.submitGuardBound = '1';
   form.addEventListener('submit', (e) => {
     e.preventDefault();
+    e.stopImmediatePropagation();
     if (busy.has(form)) return;
     void withSubmitGuard(form, () => handler(e));
   });
@@ -79,6 +82,8 @@ export function bindGuardedSubmit(form, handler) {
  * @param {(e: MouseEvent) => Promise<void>|void} handler
  */
 export function bindGuardedClick(element, handler) {
+  if (!element || element.dataset.clickGuardBound === '1') return;
+  element.dataset.clickGuardBound = '1';
   element.addEventListener('click', (e) => {
     if (busy.has(element)) {
       e.preventDefault();
