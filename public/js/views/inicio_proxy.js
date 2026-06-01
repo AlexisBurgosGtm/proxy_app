@@ -1,6 +1,6 @@
 import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
-import { toastError, toastSuccess, confirmAction } from '../alerts.js';
+import { toastError } from '../alerts.js';
 import { formatDate, formatImporte } from '../format.js';
 import {
   renderImporteLineChartFromOrdenes,
@@ -8,7 +8,6 @@ import {
   renderEmpleadoBarChart,
   destroyDashboardCharts,
 } from '../components/dashboard-chart.js';
-import { bindGuardedClick, withSubmitGuard } from '../submit-guard.js';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -28,33 +27,46 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-function sanitizeDetalles(text, maxLen = 300) {
-  let value = String(text ?? '').trim();
-  value = value.replace(/\0/g, '');
-  value = value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-  if (value.length > maxLen) value = value.slice(0, maxLen);
-  return value;
+function getFilteredOrdenes(ordenes, empleadoCodigo) {
+  if (!empleadoCodigo) return ordenes;
+  const cod = Number(empleadoCodigo);
+  return ordenes.filter((o) => Number(o.codigo) === cod);
 }
 
-function matchesOrdenSearch(orden, query) {
-  if (!query) return true;
-  const q = query.toLowerCase();
-  const haystack = [
-    orden.fecha,
-    orden.hora,
-    orden.empleado_nombre,
-    orden.desprod,
-    orden.descategoria,
-    orden.detalles,
-    orden.importe,
-  ]
-    .map((v) => String(v || '').toLowerCase())
-    .join(' ');
-  return haystack.includes(q);
+function aggregatePorCategoria(ordenes) {
+  const categories = new Map();
+
+  for (const o of ordenes) {
+    const cat = o.descategoria || 'Sin categoría';
+    categories.set(cat, (categories.get(cat) || 0) + Number(o.importe ?? 0));
+  }
+
+  return [...categories.entries()]
+    .map(([descategoria, importe]) => ({ descategoria, importe }))
+    .sort((a, b) => b.importe - a.importe);
+}
+
+function calcTotal(ordenes) {
+  return ordenes.reduce((sum, o) => sum + Number(o.importe ?? 0), 0);
+}
+
+function normalizeCategoria(descategoria) {
+  return descategoria || 'Sin categoría';
+}
+
+function sortOrdenesDetalle(ordenes) {
+  return [...ordenes].sort((a, b) => {
+    const fa = a.fecha || '';
+    const fb = b.fecha || '';
+    if (fa !== fb) return fa.localeCompare(fb);
+    const ha = a.hora || '';
+    const hb = b.hora || '';
+    if (ha !== hb) return ha.localeCompare(hb);
+    return Number(a.id ?? 0) - Number(b.id ?? 0);
+  });
 }
 
 export async function renderInicioProxy(root) {
-  document.querySelectorAll('#ordenEditModal').forEach((el) => el.remove());
   updateAppShell('inicio_proxy', 'Inicio');
   const today = todayDate();
   let dashboardData = {
@@ -64,57 +76,56 @@ export async function renderInicioProxy(root) {
     importe_por_empleado: [],
     total: 0,
   };
-  let ordenesSearchQuery = '';
   let empleados = [];
-  let productos = [];
+  let selectedCategoria = null;
 
   root.innerHTML = `
     <main class="container-fluid py-2">
       <div class="row g-3 dashboard-split">
-        <div class="col-lg-6">
-          <div class="card border-0 shadow-sm h-100">
+        <div class="col-lg-6 dashboard-left-col">
+          <form id="filtroDashboardForm" class="mb-2">
+            <div class="row g-2 align-items-end">
+              <div class="col-4">
+                <label class="form-label" for="filtroDesde">Desde</label>
+                <input type="date" class="form-control form-control-sm" id="filtroDesde" value="${today}" required>
+              </div>
+              <div class="col-4">
+                <label class="form-label" for="filtroHasta">Hasta</label>
+                <input type="date" class="form-control form-control-sm" id="filtroHasta" value="${today}" required>
+              </div>
+              <div class="col-4">
+                <label class="form-label" for="dashboardTotalFechas">Total período</label>
+                <h3 class="mb-0 text-danger" id="dashboardTotalFechas">Q 0.00</h3>
+              </div>
+            </div>
+          </form>
+          <div class="card border shadow-sm dashboard-categoria-report-card">
             <div class="card-header card-header-app py-2">
-              <h2 class="h6 mb-0"><i class="fa-solid fa-list me-2"></i>Órdenes</h2>
+              <h2 class="h6 mb-0"><i class="fa-solid fa-tags me-2"></i>Reporte por categoría</h2>
             </div>
             <div class="card-body py-2">
-              <form id="filtroOrdenesForm" class="mb-2">
-                <div class="row g-2 align-items-end">
-                  <div class="col-6 col-md-6">
-                    <label class="form-label" for="filtroDesde">Desde</label>
-                    <input type="date" class="form-control form-control-sm" id="filtroDesde" value="${today}" required>
-                  </div>
-                  <div class="col-6 col-md-6">
-                    <label class="form-label" for="filtroHasta">Hasta</label>
-                    <input type="date" class="form-control form-control-sm" id="filtroHasta" value="${today}" required>
-                  </div>
+              <div class="row g-2 align-items-end mb-2 dashboard-reporte-toolbar">
+                <div class="col-sm-7">
+                  <label class="form-label" for="filtroEmpleado">Empleado</label>
+                  <select class="form-select form-select-sm" id="filtroEmpleado">
+                    <option value="">Todos los empleados</option>
+                  </select>
                 </div>
-                <div class="row mt-2">
-                  <div class="col-12 text-end">
-                    <h3 class="mb-0 text-danger" id="ordenesTotalImporte">Q 0.00</h3>
-                  </div>
+                <div class="col-sm-5 text-sm-end">
+                  <label class="form-label" for="dashboardTotalImporte">Total reporte</label>
+                  <h3 class="mb-0 text-danger" id="dashboardTotalImporte">Q 0.00</h3>
                 </div>
-              </form>
-              <div class="mb-2">
-                <label class="form-label visually-hidden" for="ordenesBuscar">Buscar</label>
-                <input type="search" class="form-control form-control-sm" id="ordenesBuscar"
-                  placeholder="Buscar en la tabla…" autocomplete="off">
               </div>
               <div class="table-responsive eventos-list-wrap">
-                <table class="table table-sm table-hover small mb-0">
+                <table class="table table-sm table-hover small mb-0 dashboard-categoria-table">
                   <thead>
                     <tr>
-                      <th>Fecha</th>
-                      <th>Hora</th>
-                      <th>Empleado</th>
-                      <th>Producto</th>
                       <th>Categoría</th>
-                      <th>Detalles</th>
                       <th class="text-end">Importe</th>
-                      <th class="text-end">Acciones</th>
                     </tr>
                   </thead>
-                  <tbody id="ordenesListBody">
-                    <tr><td colspan="8" class="text-center text-muted">Cargando...</td></tr>
+                  <tbody id="categoriaTableBody">
+                    <tr><td colspan="2" class="text-center text-muted">Cargando...</td></tr>
                   </tbody>
                 </table>
               </div>
@@ -155,132 +166,160 @@ export async function renderInicioProxy(root) {
         </div>
       </div>
     </main>
-    <div class="modal fade" id="ordenEditModal" tabindex="-1">
-      <div class="modal-dialog">
-        <div class="modal-content small">
-          <div class="modal-header modal-header-app py-2">
-            <h5 class="modal-title" id="ordenEditModalLabel">Editar orden</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-          </div>
-          <form id="ordenEditForm" class="modal-body py-2">
-            <input type="hidden" id="ordenEditId">
-            <div class="mb-2">
-              <label class="form-label" for="ordenEditEmpleado">Empleado</label>
-              <select class="form-select form-select-sm" id="ordenEditEmpleado" required></select>
-            </div>
-            <div class="mb-2">
-              <label class="form-label" for="ordenEditFecha">Fecha</label>
-              <input type="date" class="form-control form-control-sm" id="ordenEditFecha" required>
-            </div>
-            <div class="mb-2">
-              <label class="form-label" for="ordenEditHora">Hora</label>
-              <input type="time" class="form-control form-control-sm" id="ordenEditHora" required>
-            </div>
-            <div class="mb-2">
-              <label class="form-label" for="ordenEditProducto">Producto</label>
-              <select class="form-select form-select-sm" id="ordenEditProducto" required></select>
-            </div>
-            <div class="mb-2">
-              <label class="form-label" for="ordenEditDetalles">Detalles</label>
-              <input type="text" class="form-control form-control-sm" id="ordenEditDetalles" maxlength="300">
-            </div>
-            <div class="mb-2">
-              <label class="form-label" for="ordenEditImporte">Importe</label>
-              <input type="number" class="form-control form-control-sm" id="ordenEditImporte" min="0" step="0.01" required>
-            </div>
-          </form>
-          <div class="modal-footer py-2">
-            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
-            <button type="button" class="btn btn-primary btn-sm" id="btnOrdenEditGuardar">Guardar</button>
-          </div>
-        </div>
-      </div>
-    </div>
   `;
 
   await bindLogout();
 
-  const ordenesListBody = document.getElementById('ordenesListBody');
-  const totalEl = document.getElementById('ordenesTotalImporte');
-  const ordenEditModal = new bootstrap.Modal(document.getElementById('ordenEditModal'));
-  const ordenEditEmpleado = document.getElementById('ordenEditEmpleado');
-  const ordenEditProducto = document.getElementById('ordenEditProducto');
-  const tableColSpan = 8;
+  const categoriaTableBody = document.getElementById('categoriaTableBody');
+  const totalFechasEl = document.getElementById('dashboardTotalFechas');
+  const totalReporteEl = document.getElementById('dashboardTotalImporte');
+  const filtroEmpleado = document.getElementById('filtroEmpleado');
+  const tableColSpan = 2;
 
-  function getVisibleOrdenes() {
-    return dashboardData.ordenes.filter((o) => matchesOrdenSearch(o, ordenesSearchQuery));
+  function updateTotalFechas() {
+    totalFechasEl.textContent = formatImporte(dashboardData.total ?? 0);
   }
 
-  function renderOrdenesTable() {
-    const visible = getVisibleOrdenes();
-    const visibleTotal = visible.reduce((sum, o) => sum + Number(o.importe ?? 0), 0);
-    totalEl.textContent = formatImporte(ordenesSearchQuery ? visibleTotal : dashboardData.total);
+  function getEmpleadoFiltro() {
+    return filtroEmpleado.value;
+  }
+
+  function getOrdenesFiltradas() {
+    return getFilteredOrdenes(dashboardData.ordenes, getEmpleadoFiltro());
+  }
+
+  function getOrdenesPorCategoria(descategoria) {
+    const cat = normalizeCategoria(descategoria);
+    return sortOrdenesDetalle(
+      getOrdenesFiltradas().filter((o) => normalizeCategoria(o.descategoria) === cat)
+    );
+  }
+
+  function renderDetalleOrdenesHtml(descategoria, ordenes) {
+    if (!ordenes.length) {
+      return `
+        <tr class="dashboard-cat-detail">
+          <td colspan="${tableColSpan}" class="text-center text-muted py-2">
+            No hay órdenes en esta categoría con los filtros actuales.
+          </td>
+        </tr>`;
+    }
+
+    const detalleTotal = calcTotal(ordenes);
+    return `
+      <tr class="dashboard-cat-detail">
+        <td colspan="${tableColSpan}" class="p-0">
+          <div class="dashboard-cat-detail-head px-2 py-1 small text-muted">
+            <i class="fa-solid fa-list-ul me-1"></i>${escapeHtml(descategoria)}
+            <span class="ms-1">(${ordenes.length} orden${ordenes.length === 1 ? '' : 'es'})</span>
+          </div>
+          <div class="table-responsive">
+            <table class="table table-sm table-hover small mb-0 dashboard-cat-detail-table">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Hora</th>
+                  <th>Empleado</th>
+                  <th>Producto</th>
+                  <th>Detalles</th>
+                  <th class="text-end">Importe</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${ordenes
+                  .map(
+                    (o) => `
+                  <tr>
+                    <td class="text-nowrap">${escapeHtml(formatDate(o.fecha))}</td>
+                    <td class="text-nowrap">${escapeHtml(o.hora || '—')}</td>
+                    <td>${escapeHtml(o.empleado_nombre || '—')}</td>
+                    <td>${escapeHtml(o.desprod || '—')}</td>
+                    <td>${escapeHtml(o.detalles || '—')}</td>
+                    <td class="text-end text-nowrap">${escapeHtml(formatImporte(o.importe))}</td>
+                  </tr>`
+                  )
+                  .join('')}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th colspan="5" class="text-end">Subtotal categoría</th>
+                  <th class="text-end text-nowrap">${escapeHtml(formatImporte(detalleTotal))}</th>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </td>
+      </tr>`;
+  }
+
+  function renderCategoriaTable() {
+    const ordenes = getOrdenesFiltradas();
+    const groups = aggregatePorCategoria(ordenes);
+    const total = calcTotal(ordenes);
+    totalReporteEl.textContent = formatImporte(total);
+
+    if (selectedCategoria && !groups.some((g) => g.descategoria === selectedCategoria)) {
+      selectedCategoria = null;
+    }
 
     if (!dashboardData.ordenes.length) {
-      ordenesListBody.innerHTML =
+      categoriaTableBody.innerHTML =
         `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay órdenes en el rango seleccionado.</td></tr>`;
       return;
     }
 
-    if (!visible.length) {
-      ordenesListBody.innerHTML =
-        `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay órdenes con ese criterio de búsqueda.</td></tr>`;
+    if (!groups.length) {
+      categoriaTableBody.innerHTML =
+        `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay órdenes para el empleado seleccionado.</td></tr>`;
       return;
     }
 
-    ordenesListBody.innerHTML = visible
-      .map(
-        (o) => `
-        <tr>
-          <td class="text-nowrap">${escapeHtml(formatDate(o.fecha))}</td>
-          <td class="text-nowrap">${escapeHtml(o.hora || '—')}</td>
-          <td>${escapeHtml(o.empleado_nombre || '—')}</td>
-          <td>${escapeHtml(o.desprod || '—')}</td>
-          <td>${escapeHtml(o.descategoria || '—')}</td>
-          <td>${escapeHtml(o.detalles || '—')}</td>
-          <td class="text-end text-nowrap">${escapeHtml(formatImporte(o.importe))}</td>
-          <td class="text-end text-nowrap">
-            <button type="button" class="btn btn-outline-primary btn-sm btn-orden-edit me-1" data-id="${o.id}" title="Editar">
-              <i class="fa-solid fa-pen"></i>
-            </button>
-            <button type="button" class="btn btn-outline-danger btn-sm btn-orden-delete" data-id="${o.id}" title="Eliminar">
-              <i class="fa-solid fa-trash"></i>
-            </button>
+    const rows = [];
+    for (const group of groups) {
+      const isActive = selectedCategoria === group.descategoria;
+      rows.push(`
+        <tr class="dashboard-cat-row${isActive ? ' table-active' : ''}"
+          data-categoria="${encodeURIComponent(group.descategoria)}"
+          role="button" tabindex="0"
+          aria-expanded="${isActive ? 'true' : 'false'}">
+          <td>
+            <i class="fa-solid fa-chevron-${isActive ? 'down' : 'right'} me-2 text-muted dashboard-cat-chevron"></i>
+            ${escapeHtml(group.descategoria)}
           </td>
-        </tr>`
-      )
-      .join('');
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(group.importe))}</td>
+        </tr>`);
+      if (isActive) {
+        rows.push(renderDetalleOrdenesHtml(group.descategoria, getOrdenesPorCategoria(group.descategoria)));
+      }
+    }
+
+    categoriaTableBody.innerHTML = rows.join('');
   }
 
-  function fillSelectOptions() {
-    ordenEditEmpleado.innerHTML = empleados
-      .map((e) => `<option value="${e.codigo}">${escapeHtml(e.nombre)}</option>`)
-      .join('');
-    ordenEditProducto.innerHTML = productos
-      .map((p) => `<option value="${p.codprod}">${escapeHtml(p.desprod)}</option>`)
-      .join('');
+  function toggleCategoria(descategoria) {
+    selectedCategoria = selectedCategoria === descategoria ? null : descategoria;
+    renderCategoriaTable();
   }
 
-  function openEditModal(orden) {
-    document.getElementById('ordenEditModalLabel').textContent = `Editar orden #${orden.id}`;
-    document.getElementById('ordenEditId').value = orden.id;
-    ordenEditEmpleado.value = orden.codigo ? String(orden.codigo) : '';
-    document.getElementById('ordenEditFecha').value = orden.fecha || '';
-    const hora = orden.hora && orden.hora.length >= 5 ? orden.hora.slice(0, 5) : '';
-    document.getElementById('ordenEditHora').value = hora;
-    ordenEditProducto.value = orden.codprod ? String(orden.codprod) : '';
-    document.getElementById('ordenEditDetalles').value = orden.detalles || '';
-    document.getElementById('ordenEditImporte').value = orden.importe ?? 0;
-    ordenEditModal.show();
+  function fillEmpleadoSelect() {
+    const current = filtroEmpleado.value;
+    filtroEmpleado.innerHTML =
+      `<option value="">Todos los empleados</option>` +
+      empleados
+        .map(
+          (e) =>
+            `<option value="${e.codigo}">${escapeHtml(e.nombre)}</option>`
+        )
+        .join('');
+    if (current && [...filtroEmpleado.options].some((o) => o.value === current)) {
+      filtroEmpleado.value = current;
+    }
   }
 
-  async function loadEditSelects() {
+  async function loadEmpleados() {
     try {
-      [empleados, productos] = await Promise.all([
-        api.listEmpleados(true),
-        api.listProductos(),
-      ]);
-      fillSelectOptions();
+      empleados = await api.listEmpleados(true);
+      fillEmpleadoSelect();
     } catch (err) {
       toastError(err.message);
     }
@@ -305,6 +344,7 @@ export async function renderInicioProxy(root) {
         desde,
         hasta
       );
+
       const catCount = dashboardData.importe_por_categoria.length;
       const catWrap = catCanvas.closest('.dashboard-categoria-chart-wrap');
       if (catWrap) {
@@ -324,6 +364,12 @@ export async function renderInicioProxy(root) {
     }
   }
 
+  function refreshDashboardView() {
+    updateTotalFechas();
+    renderCategoriaTable();
+    void updateCharts();
+  }
+
   async function loadDashboard() {
     const desde = document.getElementById('filtroDesde').value;
     const hasta = document.getElementById('filtroHasta').value;
@@ -336,13 +382,13 @@ export async function renderInicioProxy(root) {
       return;
     }
 
-    ordenesListBody.innerHTML =
+    selectedCategoria = null;
+    categoriaTableBody.innerHTML =
       `<tr><td colspan="${tableColSpan}" class="text-center text-muted">Cargando...</td></tr>`;
 
     try {
       dashboardData = await api.getDashboardOrdenesResumen(desde, hasta);
-      renderOrdenesTable();
-      await updateCharts();
+      refreshDashboardView();
     } catch (err) {
       dashboardData = {
         ordenes: [],
@@ -351,91 +397,36 @@ export async function renderInicioProxy(root) {
         importe_por_empleado: [],
         total: 0,
       };
-      ordenesListBody.innerHTML =
-        `<tr><td colspan="${tableColSpan}" class="text-center text-danger">Error al cargar órdenes</td></tr>`;
-      totalEl.textContent = formatImporte(0);
+      categoriaTableBody.innerHTML =
+        `<tr><td colspan="${tableColSpan}" class="text-center text-danger">Error al cargar datos</td></tr>`;
+      totalFechasEl.textContent = formatImporte(0);
+      totalReporteEl.textContent = formatImporte(0);
       destroyDashboardCharts();
       toastError(err.message);
     }
   }
 
-  document.getElementById('filtroOrdenesForm').addEventListener('submit', (e) => {
+  document.getElementById('filtroDashboardForm').addEventListener('submit', (e) => {
     e.preventDefault();
   });
 
-  document.getElementById('ordenesBuscar').addEventListener('input', (e) => {
-    ordenesSearchQuery = e.target.value.trim().toLowerCase();
-    renderOrdenesTable();
+  filtroEmpleado.addEventListener('change', () => {
+    selectedCategoria = null;
+    renderCategoriaTable();
   });
 
-  ordenesListBody.addEventListener('click', (e) => {
-    const editBtn = e.target.closest('.btn-orden-edit');
-    if (editBtn) {
-      const id = Number(editBtn.dataset.id);
-      const orden = dashboardData.ordenes.find((o) => Number(o.id) === id);
-      if (orden) openEditModal(orden);
-      return;
-    }
+  categoriaTableBody.addEventListener('click', (e) => {
+    const row = e.target.closest('.dashboard-cat-row');
+    if (!row) return;
+    toggleCategoria(decodeURIComponent(row.dataset.categoria || ''));
+  });
 
-    const deleteBtn = e.target.closest('.btn-orden-delete');
-    if (!deleteBtn || deleteBtn.disabled) return;
-
+  categoriaTableBody.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.dashboard-cat-row');
+    if (!row) return;
     e.preventDefault();
-    void withSubmitGuard(deleteBtn, async () => {
-      const id = Number(deleteBtn.dataset.id);
-      const ok = await confirmAction('Eliminar orden', '¿Confirma la eliminación de esta orden?');
-      if (!ok) return;
-      try {
-        await api.deleteOrden(id);
-        toastSuccess('Orden eliminada');
-        await loadDashboard();
-      } catch (err) {
-        toastError(err.message);
-      }
-    });
-  });
-
-  document.getElementById('ordenEditForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-  });
-
-  async function saveOrdenEdit() {
-    const id = Number(document.getElementById('ordenEditId').value);
-    const horaInput = document.getElementById('ordenEditHora').value;
-    const importe = Number(document.getElementById('ordenEditImporte').value);
-    if (!Number.isInteger(id) || id <= 0) {
-      toastError('Orden no válida.');
-      return;
-    }
-    if (!horaInput) {
-      toastError('Ingrese la hora.');
-      return;
-    }
-    if (Number.isNaN(importe) || importe < 0) {
-      toastError('Ingrese un importe válido.');
-      return;
-    }
-
-    await api.updateOrden({
-      id,
-      codigo: Number(ordenEditEmpleado.value),
-      fecha: document.getElementById('ordenEditFecha').value,
-      hora: horaInput.slice(0, 5),
-      codprod: Number(ordenEditProducto.value),
-      detalles: sanitizeDetalles(document.getElementById('ordenEditDetalles').value) || null,
-      importe,
-    });
-    toastSuccess('Orden actualizada');
-    ordenEditModal.hide();
-    await loadDashboard();
-  }
-
-  bindGuardedClick(document.getElementById('btnOrdenEditGuardar'), async () => {
-    try {
-      await saveOrdenEdit();
-    } catch (err) {
-      toastError(err.message);
-    }
+    toggleCategoria(decodeURIComponent(row.dataset.categoria || ''));
   });
 
   function onFiltroFechaChange() {
@@ -443,13 +434,12 @@ export async function renderInicioProxy(root) {
     const hasta = document.getElementById('filtroHasta').value;
     if (!desde || !hasta) return;
     if (desde > hasta) return;
-    ordenesSearchQuery = document.getElementById('ordenesBuscar').value.trim().toLowerCase();
     loadDashboard();
   }
 
   document.getElementById('filtroDesde').addEventListener('change', onFiltroFechaChange);
   document.getElementById('filtroHasta').addEventListener('change', onFiltroFechaChange);
 
-  await loadEditSelects();
+  await loadEmpleados();
   await loadDashboard();
 }

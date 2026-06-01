@@ -4,6 +4,11 @@ import { getEmpleado, isSupervisor } from '../auth.js';
 import { toastSuccess, toastError, toastWarning } from '../alerts.js';
 import { formatDate, formatImporte } from '../format.js';
 import { bindGuardedSubmit, bindGuardedClick, withSubmitGuard } from '../submit-guard.js';
+import {
+  buildCuadrePrintHtml,
+  buildCuadrePrintDocument,
+  openCuadrePrintTab,
+} from '../cuadre-print.js';
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -42,128 +47,70 @@ function formatHoraNow() {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-const CUADRE_PRINT_PAGE_STYLES = `
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    padding: 1.25rem;
-    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    font-size: 14px;
-    color: #111;
-    background: #fff;
-  }
-  .cuadre-print-sheet {
-    max-width: 480px;
-    margin: 0 auto;
-  }
-  .cuadre-print-sheet h2 {
-    font-size: 1.15rem;
-    font-weight: 700;
-    text-align: center;
-    margin: 0 0 1rem;
-  }
-  .cuadre-print-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .cuadre-print-table th,
-  .cuadre-print-table td {
-    border: 1px solid #333;
-    padding: 0.5rem 0.65rem;
-    vertical-align: top;
-  }
-  .cuadre-print-table th {
-    width: 42%;
-    text-align: left;
-    font-weight: 600;
-    background: #f5f5f5;
-  }
-  .cuadre-print-table td {
-    text-align: right;
-  }
-  .cuadre-print-table td.cuadre-print-text-left {
-    text-align: left;
-  }
-  @media print {
-    body { padding: 0.5rem; }
-  }
-`;
+const CUADRE_BILLETE_DENOMS = [200, 100, 50, 20, 10, 5, 1];
+const CUADRE_MONEDA_DENOMS = [
+  { key: '5', value: 0.05 },
+  { key: '10', value: 0.1 },
+  { key: '25', value: 0.25 },
+  { key: '50', value: 0.5 },
+  { key: '1', value: 1 },
+];
 
-function buildCuadrePrintHtml(data) {
-  const obs = data.observaciones ? escapeHtml(data.observaciones) : '—';
+function buildConteoEfectivoHtml() {
+  const billetesRows = CUADRE_BILLETE_DENOMS.map(
+    (denom) => `
+      <div class="cuadre-conteo-row">
+        <label class="cuadre-conteo-denom" for="cuadreConteoBillete${denom}">Q${denom}</label>
+        <span class="cuadre-conteo-line" aria-hidden="true"></span>
+        <input type="number" class="form-control form-control-sm cuadre-conteo-qty" id="cuadreConteoBillete${denom}"
+          data-denom-value="${denom}" min="0" step="1" inputmode="numeric" value="0" autocomplete="off">
+      </div>`
+  ).join('');
+
+  const monedasRows = CUADRE_MONEDA_DENOMS.map((moneda) => {
+    const label = moneda.key === '1' ? 'Q1' : `${moneda.key} ctv`;
+    return `
+      <div class="cuadre-conteo-row">
+        <label class="cuadre-conteo-denom" for="cuadreConteoMoneda${moneda.key}">${label}</label>
+        <span class="cuadre-conteo-line" aria-hidden="true"></span>
+        <input type="number" class="form-control form-control-sm cuadre-conteo-qty" id="cuadreConteoMoneda${moneda.key}"
+          data-denom-value="${moneda.value}" min="0" step="1" inputmode="numeric" value="0" autocomplete="off">
+      </div>`;
+  }).join('');
+
   return `
-    <div class="cuadre-print-sheet">
-      <h2>PROXY — Cuadre del día</h2>
-      <table class="cuadre-print-table">
-        <tr>
-          <th>Nombre empleado</th>
-          <td class="cuadre-print-text-left">${escapeHtml(data.empleadoNombre)}</td>
-        </tr>
-        <tr>
-          <th>Fecha</th>
-          <td>${escapeHtml(formatDate(data.fecha))}</td>
-        </tr>
-        <tr>
-          <th>Hora</th>
-          <td>${escapeHtml(data.hora)}</td>
-        </tr>
-        <tr>
-          <th>Observaciones</th>
-          <td class="cuadre-print-text-left">${obs}</td>
-        </tr>
-        <tr>
-          <th>Importe a cuadrar</th>
-          <td>${escapeHtml(formatImporte(data.importe))}</td>
-        </tr>
-        <tr>
-          <th>Efectivo</th>
-          <td>${escapeHtml(formatImporte(data.efectivo))}</td>
-        </tr>
-        <tr>
-          <th>Documentos</th>
-          <td>${escapeHtml(formatImporte(data.documentos))}</td>
-        </tr>
-        <tr>
-          <th>Diferencia</th>
-          <td>${escapeHtml(formatImporte(data.diferencia))}</td>
-        </tr>
-      </table>
+    <div class="card cuadre-conteo-card border shadow-sm" id="cuadreConteoEfectivo">
+      <div class="card-header py-2 small fw-semibold">Conteo de billetes y monedas</div>
+      <div class="card-body py-2">
+        <div class="row g-2">
+          <div class="col-sm-6">
+            <div class="cuadre-conteo-section-title">Billetes</div>
+            ${billetesRows}
+          </div>
+          <div class="col-sm-6">
+            <div class="cuadre-conteo-section-title">Monedas</div>
+            ${monedasRows}
+          </div>
+        </div>
+      </div>
     </div>`;
 }
 
-function buildCuadrePrintDocument(data, autoPrint = false) {
-  const printScript = autoPrint
-    ? `<script>window.addEventListener('load',function(){window.focus();window.print();});<\/script>`
-    : '';
-  return `<!DOCTYPE html>
-<html lang="es">
-<head>
-  <meta charset="utf-8">
-  <title>Cuadre del día — PROXY</title>
-  <style>${CUADRE_PRINT_PAGE_STYLES}</style>
-</head>
-<body>
-  ${buildCuadrePrintHtml(data)}
-  ${printScript}
-</body>
-</html>`;
+function parseConteoQty(value) {
+  const n = parseInt(String(value ?? '').trim(), 10);
+  return Number.isNaN(n) || n < 0 ? 0 : n;
 }
 
-function openCuadrePrintTab(data, autoPrint = true) {
-  const html = buildCuadrePrintDocument(data, autoPrint);
-  const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-
-  const link = document.createElement('a');
-  link.href = url;
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  document.body.appendChild(link);
-  link.click();
-  link.remove();
-
-  setTimeout(() => URL.revokeObjectURL(url), 120000);
-  return true;
+function calcConteoEfectivoTotal(root) {
+  let total = 0;
+  root.querySelectorAll('.cuadre-conteo-qty').forEach((input) => {
+    const denom = Number(input.dataset.denomValue);
+    const qty = parseConteoQty(input.value);
+    if (!Number.isNaN(denom) && qty > 0) {
+      total += denom * qty;
+    }
+  });
+  return Math.round(total * 100) / 100;
 }
 
 function prepareCuadrePrintTab() {
@@ -356,7 +303,7 @@ export async function renderCuadre(root) {
       </div>
     </div>
     <div class="modal fade" id="cuadreFinalizarModal" tabindex="-1">
-      <div class="modal-dialog modal-lg">
+      <div class="modal-dialog modal-lg modal-dialog-scrollable">
         <div class="modal-content small">
           <div class="modal-header modal-header-app py-2">
             <h5 class="modal-title">Finalizar día</h5>
@@ -371,21 +318,18 @@ export async function renderCuadre(root) {
               <label class="form-label">Monto a cuadrar</label>
               <div class="cuadre-monto-cuadrar" id="cuadreFinalizarMontoCuadrar">${formatImporte(0)}</div>
             </div>
-            <div class="mb-2">
-              <label class="form-label" for="cuadreFinalizarEfectivo">Efectivo</label>
-              <input type="number" class="form-control form-control-sm" id="cuadreFinalizarEfectivo" min="0" step="0.01" value="0" required>
-            </div>
-            <div class="mb-2">
-              <label class="form-label" for="cuadreFinalizarDocumentos">Documentos</label>
-              <input type="number" class="form-control form-control-sm" id="cuadreFinalizarDocumentos" min="0" step="0.01" value="0" required>
-            </div>
-            <div class="mb-2">
-              <span class="form-label d-block mb-1">Suma (Efectivo + Documentos)</span>
-              <strong id="cuadreFinalizarSuma">${formatImporte(0)}</strong>
-            </div>
-            <div class="mb-2">
-              <span class="form-label d-block mb-1">Diferencia</span>
-              <strong id="cuadreFinalizarDiferencia">${formatImporte(0)}</strong>
+            ${buildConteoEfectivoHtml()}
+            <div class="row g-2 cuadre-totales-row mt-2">
+              <div class="col-6">
+                <label class="form-label" for="cuadreFinalizarEfectivo">Efectivo</label>
+                <input type="text" class="form-control form-control-sm cuadre-efectivo-readonly" id="cuadreFinalizarEfectivo"
+                  value="Q 0.00" readonly tabindex="-1" aria-readonly="true">
+              </div>
+              <div class="col-6">
+                <label class="form-label" for="cuadreFinalizarDiferencia">Diferencia</label>
+                <input type="text" class="form-control form-control-sm cuadre-diferencia-readonly" id="cuadreFinalizarDiferencia"
+                  value="Q 0.00" readonly tabindex="-1" aria-readonly="true">
+              </div>
             </div>
           </form>
           <div class="modal-footer py-2">
@@ -414,9 +358,8 @@ export async function renderCuadre(root) {
   const ordenProductoNombre = document.getElementById('cuadreOrdenProductoNombre');
   const finalizarMontoCuadrar = document.getElementById('cuadreFinalizarMontoCuadrar');
   const finalizarEfectivo = document.getElementById('cuadreFinalizarEfectivo');
-  const finalizarDocumentos = document.getElementById('cuadreFinalizarDocumentos');
-  const finalizarSuma = document.getElementById('cuadreFinalizarSuma');
   const finalizarDiferencia = document.getElementById('cuadreFinalizarDiferencia');
+  const conteoEfectivoRoot = document.getElementById('cuadreConteoEfectivo');
   const ordenesListModal = new bootstrap.Modal(document.getElementById('cuadreOrdenesListModal'));
   const ordenesListBody = document.getElementById('cuadreOrdenesListBody');
   const ordenesBuscar = document.getElementById('cuadreOrdenesBuscar');
@@ -445,13 +388,39 @@ export async function renderCuadre(root) {
     printModal.show();
   }
 
-  function updateFinalizarCalculos() {
-    const efectivo = parseAmount(finalizarEfectivo.value);
-    const documentos = parseAmount(finalizarDocumentos.value);
-    const suma = Math.round((efectivo + documentos) * 100) / 100;
-    const diferencia = Math.round((totalDia - suma) * 100) / 100;
-    finalizarSuma.textContent = formatImporte(suma);
-    finalizarDiferencia.textContent = formatImporte(diferencia);
+  function calcDiferenciaCuadre(efectivo) {
+    return Math.round((totalDia - efectivo) * 100) / 100;
+  }
+
+  function updateEfectivoFromConteo() {
+    const efectivo = calcConteoEfectivoTotal(conteoEfectivoRoot);
+    const diferencia = calcDiferenciaCuadre(efectivo);
+    finalizarEfectivo.value = formatImporte(efectivo);
+    finalizarDiferencia.value = formatImporte(diferencia);
+    finalizarDiferencia.classList.toggle('cuadre-diferencia-negativa', diferencia < 0);
+    finalizarDiferencia.classList.toggle('cuadre-diferencia-positiva', diferencia > 0);
+  }
+
+  function resetConteoEfectivo() {
+    conteoEfectivoRoot.querySelectorAll('.cuadre-conteo-qty').forEach((input) => {
+      input.value = '0';
+    });
+    updateEfectivoFromConteo();
+  }
+
+  function bindConteoEfectivoListeners() {
+    if (!conteoEfectivoRoot || conteoEfectivoRoot.dataset.bound === '1') return;
+    conteoEfectivoRoot.dataset.bound = '1';
+    conteoEfectivoRoot.addEventListener('input', (e) => {
+      if (e.target.matches('.cuadre-conteo-qty')) {
+        e.target.value = String(parseConteoQty(e.target.value));
+        updateEfectivoFromConteo();
+      }
+    });
+  }
+
+  function getEfectivoFromConteo() {
+    return calcConteoEfectivoTotal(conteoEfectivoRoot);
   }
 
   function openFinalizarModal() {
@@ -462,10 +431,9 @@ export async function renderCuadre(root) {
       return;
     }
     finalizarForm.reset();
-    finalizarEfectivo.value = '0';
-    finalizarDocumentos.value = '0';
+    document.getElementById('cuadreFinalizarObservaciones').value = '';
     finalizarMontoCuadrar.textContent = formatImporte(totalDia);
-    updateFinalizarCalculos();
+    resetConteoEfectivo();
     finalizarModal.show();
   }
 
@@ -481,7 +449,6 @@ export async function renderCuadre(root) {
       observaciones: cuadre.observaciones || '',
       importe: Number(cuadre.importe ?? 0),
       efectivo: Number(cuadre.efectivo ?? 0),
-      documentos: Number(cuadre.documentos ?? 0),
       diferencia: Number(cuadre.diferencia ?? 0),
     };
   }
@@ -757,8 +724,8 @@ export async function renderCuadre(root) {
       document.getElementById('cuadreFinalizarObservaciones').value
     );
 
-    const efectivo = parseAmount(finalizarEfectivo.value);
-    const documentos = parseAmount(finalizarDocumentos.value);
+    const efectivo = getEfectivoFromConteo();
+    const diferencia = calcDiferenciaCuadre(efectivo);
     const horaCierre = formatHoraNow();
 
     const printTab = prepareCuadrePrintTab();
@@ -769,11 +736,9 @@ export async function renderCuadre(root) {
         fecha,
         importe: totalDia,
         efectivo,
-        documentos,
+        diferencia,
         observaciones: obs || null,
       });
-      const suma = Math.round((efectivo + documentos) * 100) / 100;
-      const diferencia = Math.round((totalDia - suma) * 100) / 100;
       const printData = {
         empleadoNombre: getEmpleadoNombre(),
         fecha,
@@ -781,7 +746,6 @@ export async function renderCuadre(root) {
         observaciones: obs,
         importe: totalDia,
         efectivo,
-        documentos,
         diferencia,
       };
       toastSuccess('Día finalizado');
@@ -797,8 +761,7 @@ export async function renderCuadre(root) {
     }
   });
 
-  finalizarEfectivo.addEventListener('input', updateFinalizarCalculos);
-  finalizarDocumentos.addEventListener('input', updateFinalizarCalculos);
+  bindConteoEfectivoListeners();
 
   bindGuardedClick(document.getElementById('btnCuadrePrint'), () => {
     if (!lastCuadrePrintData) {

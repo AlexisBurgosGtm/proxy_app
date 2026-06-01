@@ -67,6 +67,27 @@ body {
   background: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%) !important;
 }
 
+.navbar-app-fixed {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1040;
+}
+
+#appShell:not(.d-none) ~ #root {
+  padding-top: var(--app-navbar-height, 3.5rem);
+}
+
+.archivo-search-input {
+  border: 2px solid #ffc107 !important;
+}
+
+.archivo-search-input:focus {
+  border-color: #e6ac00 !important;
+  box-shadow: 0 0 0 0.15rem rgba(255, 193, 7, 0.35);
+}
+
 .navbar-app .navbar-brand,
 .navbar-app .btn-outline-light {
   color: #fff;
@@ -153,6 +174,37 @@ body {
 .dashboard-importe-chart-wrap {
   position: relative;
   height: 240px;
+}
+
+.dashboard-categoria-report-card {
+  border-color: rgba(33, 159, 252, 0.35) !important;
+}
+
+.dashboard-left-col .dashboard-categoria-report-card .card-body {
+  min-height: 12rem;
+}
+
+.dashboard-cat-row {
+  cursor: pointer;
+}
+
+.dashboard-cat-row:hover {
+  background-color: rgba(33, 159, 252, 0.08);
+}
+
+.dashboard-cat-detail > td {
+  background-color: #f8f9fa;
+  border-top: none;
+}
+
+.dashboard-cat-detail-head {
+  background-color: rgba(33, 159, 252, 0.06);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+}
+
+.dashboard-cat-detail-table thead th {
+  font-size: 0.8rem;
+  white-space: nowrap;
 }
 
 .dashboard-categoria-chart-wrap {
@@ -667,6 +719,66 @@ main {
   font-size: 1.25rem;
   font-weight: 700;
   color: #dc2626;
+}
+
+.cuadre-conteo-card .card-header {
+  background: linear-gradient(135deg, var(--primary-start) 0%, var(--primary-end) 100%);
+  color: #fff;
+}
+
+.cuadre-conteo-section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #555;
+  margin-bottom: 0.5rem;
+}
+
+.cuadre-conteo-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+}
+
+.cuadre-conteo-denom {
+  flex: 0 0 auto;
+  min-width: 3rem;
+  margin: 0;
+  padding-bottom: 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cuadre-conteo-line {
+  flex: 1 1 auto;
+  align-self: flex-end;
+  min-width: 1.5rem;
+  margin-bottom: 0.45rem;
+  border-bottom: 1px solid #333;
+}
+
+.cuadre-conteo-qty {
+  flex: 0 0 5.5rem;
+  max-width: 5.5rem;
+}
+
+.cuadre-totales-row .cuadre-efectivo-readonly,
+.cuadre-totales-row .cuadre-diferencia-readonly {
+  font-size: 1.1rem;
+  font-weight: 700;
+  background-color: #f8f9fa;
+  cursor: not-allowed;
+  text-align: right;
+}
+
+.cuadre-diferencia-readonly.cuadre-diferencia-negativa {
+  color: #dc2626;
+}
+
+.cuadre-diferencia-readonly.cuadre-diferencia-positiva {
+  color: #16a34a;
 }
 
 .swal2-popup {

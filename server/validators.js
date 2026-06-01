@@ -499,7 +499,6 @@ function validateFinalizarDia(body) {
   const rawImporte = body.importe ?? body.monto_cuadrar;
   let importe = null;
   let efectivo = null;
-  let documentos = null;
 
   if (!Number.isInteger(codigo) || codigo <= 0) {
     errors.push('Debe seleccionar un empleado válido.');
@@ -510,12 +509,18 @@ function validateFinalizarDia(body) {
 
   importe = parseCuadreAmount(rawImporte, 'El importe', errors);
   efectivo = parseCuadreAmount(body.efectivo, 'El efectivo', errors);
-  documentos = parseCuadreAmount(body.documentos, 'Los documentos', errors);
+  const documentos = 0;
 
-  const diferencia =
-    importe !== null && efectivo !== null && documentos !== null
-      ? Math.round((importe - efectivo - documentos) * 100) / 100
-      : null;
+  let diferencia = null;
+  if (body.diferencia !== undefined && body.diferencia !== null && body.diferencia !== '') {
+    const diffNum = Number(body.diferencia);
+    if (!Number.isNaN(diffNum)) {
+      diferencia = Math.round(diffNum * 100) / 100;
+    }
+  }
+  if (diferencia === null && importe !== null && efectivo !== null) {
+    diferencia = Math.round((importe - efectivo) * 100) / 100;
+  }
 
   return {
     valid: errors.length === 0,

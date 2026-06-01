@@ -927,7 +927,7 @@ router.post(
     }
 
     const rows = await query(
-      `SELECT o.ID, o.FECHA, o.HORA, o.IMPORTE,
+      `SELECT o.ID, o.CODIGO, o.CODPROD, o.FECHA, o.HORA, o.DETALLES, o.IMPORTE,
               p.DESPROD, c.DESCATEGORIA, e.nombre AS empleado_nombre
        FROM ordenes o
        LEFT JOIN productos p ON p.CODPROD = o.CODPROD
@@ -941,8 +941,11 @@ router.post(
     res.json(
       rows.map((row) => ({
         id: row.ID ?? row.id,
+        codigo: row.CODIGO ?? row.codigo ?? null,
+        codprod: row.CODPROD ?? row.codprod ?? null,
         fecha: toDateString(row.FECHA ?? row.fecha),
         hora: row.HORA ?? row.hora ?? '',
+        detalles: row.DETALLES ?? row.detalles ?? '',
         empleado_nombre: row.empleado_nombre ?? '',
         desprod: row.DESPROD ?? row.desprod ?? '',
         descategoria: row.DESCATEGORIA ?? row.descategoria ?? '',

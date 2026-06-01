@@ -1,9 +1,11 @@
 import * as api from '../api.js';
 import { updateAppShell, bindLogout } from '../components/layout.js';
-import { toastError, toastSuccess } from '../alerts.js';
+import { toastError, toastSuccess, confirmAction } from '../alerts.js';
 import { formatDate, formatImporte } from '../format.js';
 import { statusBadge, renderTicketDetailHtml, bindPhotoZoom } from '../components/ticket-detail.js';
 import { exportRowsToExcel } from '../export-excel.js';
+import { bindGuardedClick, withSubmitGuard } from '../submit-guard.js';
+import { openCuadrePrintTab, buildPrintDataFromArchivoCuadre } from '../cuadre-print.js';
 
 const TIPO_TICKETS = 'TICKETS';
 const TIPO_ORDENES = 'ORDENES';
@@ -28,6 +30,14 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.textContent = text ?? '';
   return div.innerHTML;
+}
+
+function sanitizeDetalles(text, maxLen = 300) {
+  let value = String(text ?? '').trim();
+  value = value.replace(/\0/g, '');
+  value = value.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  if (value.length > maxLen) value = value.slice(0, maxLen);
+  return value;
 }
 
 function statusLabel(status) {
@@ -61,6 +71,7 @@ function matchesOrdenSearch(orden, query) {
     orden.empleado_nombre,
     orden.desprod,
     orden.descategoria,
+    orden.detalles,
     orden.importe,
   ]
     .map((v) => String(v || '').toLowerCase())
@@ -103,6 +114,7 @@ const ORDEN_HEADERS = [
   { key: 'producto', label: 'Producto' },
   { key: 'categoria', label: 'Categoría' },
   { key: 'importe', label: 'Importe', align: 'end' },
+  { key: 'acciones', label: 'Acciones', align: 'end' },
 ];
 
 const CUADRE_HEADERS = [
@@ -113,9 +125,11 @@ const CUADRE_HEADERS = [
   { key: 'documentos', label: 'Documentos', align: 'end' },
   { key: 'diferencia', label: 'Diferencia', align: 'end' },
   { key: 'observaciones', label: 'Observaciones' },
+  { key: 'acciones', label: 'Acciones', align: 'end' },
 ];
 
 export async function renderArchivo(root) {
+  document.querySelectorAll('#archivoOrdenEditModal').forEach((el) => el.remove());
   updateAppShell('archivo', 'Archivo');
   const { start, end } = monthRange();
   let tipoTransaccion = TIPO_TICKETS;
@@ -124,6 +138,8 @@ export async function renderArchivo(root) {
   let cuadres = [];
   let searchQuery = '';
   let detailModal = null;
+  let empleados = [];
+  let productos = [];
 
   root.innerHTML = `
     <main class="container-fluid py-2 cotizaciones-page">
@@ -160,7 +176,7 @@ export async function renderArchivo(root) {
             <div class="row g-2 mt-2">
               <div class="col-12">
                 <label class="form-label visually-hidden" for="archivoSearch">Buscar en la tabla</label>
-                <input type="search" class="form-control form-control-sm" id="archivoSearch"
+                <input type="search" class="form-control form-control-sm archivo-search-input" id="archivoSearch"
                   placeholder="Buscar en la tabla…" autocomplete="off">
               </div>
             </div>
@@ -190,11 +206,55 @@ export async function renderArchivo(root) {
         </div>
       </div>
     </div>
+    <div class="modal fade" id="archivoOrdenEditModal" tabindex="-1">
+      <div class="modal-dialog">
+        <div class="modal-content small">
+          <div class="modal-header modal-header-app py-2">
+            <h5 class="modal-title" id="archivoOrdenEditModalLabel">Editar orden</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <form id="archivoOrdenEditForm" class="modal-body py-2">
+            <input type="hidden" id="archivoOrdenEditId">
+            <div class="mb-2">
+              <label class="form-label" for="archivoOrdenEditEmpleado">Empleado</label>
+              <select class="form-select form-select-sm" id="archivoOrdenEditEmpleado" required></select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="archivoOrdenEditFecha">Fecha</label>
+              <input type="date" class="form-control form-control-sm" id="archivoOrdenEditFecha" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="archivoOrdenEditHora">Hora</label>
+              <input type="time" class="form-control form-control-sm" id="archivoOrdenEditHora" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="archivoOrdenEditProducto">Producto</label>
+              <select class="form-select form-select-sm" id="archivoOrdenEditProducto" required></select>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="archivoOrdenEditDetalles">Detalles</label>
+              <input type="text" class="form-control form-control-sm" id="archivoOrdenEditDetalles" maxlength="300">
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="archivoOrdenEditImporte">Importe</label>
+              <input type="number" class="form-control form-control-sm" id="archivoOrdenEditImporte" min="0" step="0.01" required>
+            </div>
+          </form>
+          <div class="modal-footer py-2">
+            <button type="button" class="btn btn-secondary btn-sm" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary btn-sm" id="btnArchivoOrdenEditGuardar">Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
   `;
 
   await bindLogout();
 
   detailModal = new bootstrap.Modal(document.getElementById('archivoTicketModal'));
+  const ordenEditModal = new bootstrap.Modal(document.getElementById('archivoOrdenEditModal'));
+  const ordenEditEmpleado = document.getElementById('archivoOrdenEditEmpleado');
+  const ordenEditProducto = document.getElementById('archivoOrdenEditProducto');
   const tableHead = document.getElementById('archivoTableHead');
   const tableBody = document.getElementById('archivoTableBody');
 
@@ -323,6 +383,40 @@ export async function renderArchivo(root) {
     bindRowActions();
   }
 
+  function fillOrdenSelectOptions() {
+    ordenEditEmpleado.innerHTML = empleados
+      .map((e) => `<option value="${e.codigo}">${escapeHtml(e.nombre)}</option>`)
+      .join('');
+    ordenEditProducto.innerHTML = productos
+      .map((p) => `<option value="${p.codprod}">${escapeHtml(p.desprod)}</option>`)
+      .join('');
+  }
+
+  function openOrdenEditModal(orden) {
+    document.getElementById('archivoOrdenEditModalLabel').textContent = `Editar orden #${orden.id}`;
+    document.getElementById('archivoOrdenEditId').value = orden.id;
+    ordenEditEmpleado.value = orden.codigo ? String(orden.codigo) : '';
+    document.getElementById('archivoOrdenEditFecha').value = orden.fecha || '';
+    const hora = orden.hora && orden.hora.length >= 5 ? orden.hora.slice(0, 5) : '';
+    document.getElementById('archivoOrdenEditHora').value = hora;
+    ordenEditProducto.value = orden.codprod ? String(orden.codprod) : '';
+    document.getElementById('archivoOrdenEditDetalles').value = orden.detalles || '';
+    document.getElementById('archivoOrdenEditImporte').value = orden.importe ?? 0;
+    ordenEditModal.show();
+  }
+
+  async function loadOrdenEditSelects() {
+    try {
+      [empleados, productos] = await Promise.all([
+        api.listEmpleados(true),
+        api.listProductos(),
+      ]);
+      fillOrdenSelectOptions();
+    } catch (err) {
+      toastError(err.message);
+    }
+  }
+
   function renderOrdenesTable(visible) {
     tableBody.innerHTML = visible
       .map(
@@ -334,6 +428,14 @@ export async function renderArchivo(root) {
           <td>${escapeHtml(o.desprod || '—')}</td>
           <td>${escapeHtml(o.descategoria || '—')}</td>
           <td class="text-end text-nowrap">${escapeHtml(formatImporte(o.importe))}</td>
+          <td class="text-end text-nowrap">
+            <button type="button" class="btn btn-outline-primary btn-sm btn-archivo-orden-edit me-1" data-id="${o.id}" title="Editar">
+              <i class="fa-solid fa-pen"></i>
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm btn-archivo-orden-delete" data-id="${o.id}" title="Eliminar">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </td>
         </tr>`
       )
       .join('');
@@ -351,6 +453,11 @@ export async function renderArchivo(root) {
           <td class="text-end text-nowrap">${escapeHtml(formatImporte(c.documentos))}</td>
           <td class="text-end text-nowrap">${escapeHtml(formatImporte(c.diferencia))}</td>
           <td>${escapeHtml(c.observaciones || '—')}</td>
+          <td class="text-end text-nowrap">
+            <button type="button" class="btn btn-outline-secondary btn-sm btn-archivo-cuadre-reprint" data-id="${c.id}" title="Reimprimir">
+              <i class="fa-solid fa-print me-1"></i>Reimprimir
+            </button>
+          </td>
         </tr>`
       )
       .join('');
@@ -531,5 +638,85 @@ export async function renderArchivo(root) {
   });
   document.getElementById('btnArchivoExportar').addEventListener('click', exportToExcel);
 
+  tableBody.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.btn-archivo-orden-edit');
+    if (editBtn) {
+      const id = Number(editBtn.dataset.id);
+      const orden = ordenes.find((o) => Number(o.id) === id);
+      if (orden) openOrdenEditModal(orden);
+      return;
+    }
+
+    const deleteBtn = e.target.closest('.btn-archivo-orden-delete');
+    if (deleteBtn) {
+      e.preventDefault();
+      void withSubmitGuard(deleteBtn, async () => {
+        const id = Number(deleteBtn.dataset.id);
+        const ok = await confirmAction('Eliminar orden', '¿Confirma la eliminación de esta orden?');
+        if (!ok) return;
+        try {
+          await api.deleteOrden(id);
+          toastSuccess('Orden eliminada');
+          await loadList();
+        } catch (err) {
+          toastError(err.message);
+        }
+      });
+      return;
+    }
+
+    const reprintBtn = e.target.closest('.btn-archivo-cuadre-reprint');
+    if (reprintBtn) {
+      const id = Number(reprintBtn.dataset.id);
+      const cuadre = cuadres.find((c) => Number(c.id) === id);
+      if (!cuadre) return;
+      openCuadrePrintTab(buildPrintDataFromArchivoCuadre(cuadre), true);
+    }
+  });
+
+  document.getElementById('archivoOrdenEditForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+  });
+
+  async function saveOrdenEdit() {
+    const id = Number(document.getElementById('archivoOrdenEditId').value);
+    const horaInput = document.getElementById('archivoOrdenEditHora').value;
+    const importe = Number(document.getElementById('archivoOrdenEditImporte').value);
+    if (!Number.isInteger(id) || id <= 0) {
+      toastError('Orden no válida.');
+      return;
+    }
+    if (!horaInput) {
+      toastError('Ingrese la hora.');
+      return;
+    }
+    if (Number.isNaN(importe) || importe < 0) {
+      toastError('Ingrese un importe válido.');
+      return;
+    }
+
+    await api.updateOrden({
+      id,
+      codigo: Number(ordenEditEmpleado.value),
+      fecha: document.getElementById('archivoOrdenEditFecha').value,
+      hora: horaInput.slice(0, 5),
+      codprod: Number(ordenEditProducto.value),
+      detalles: sanitizeDetalles(document.getElementById('archivoOrdenEditDetalles').value) || null,
+      importe,
+    });
+    toastSuccess('Orden actualizada');
+    ordenEditModal.hide();
+    await loadList();
+  }
+
+  bindGuardedClick(document.getElementById('btnArchivoOrdenEditGuardar'), async () => {
+    try {
+      await saveOrdenEdit();
+    } catch (err) {
+      toastError(err.message);
+    }
+  });
+
+  await loadOrdenEditSelects();
   await loadList();
 }

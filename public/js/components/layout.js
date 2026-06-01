@@ -58,7 +58,7 @@ function mountAppShell() {
   const shell = document.createElement('div');
   shell.id = 'appShell';
   shell.innerHTML = `
-    <nav class="navbar navbar-app small sticky-top shadow-sm">
+    <nav class="navbar navbar-app navbar-app-fixed small shadow-sm">
       <div class="container-fluid">
         <button class="btn btn-outline-light btn-sm d-inline-flex align-items-center justify-content-center menu-hamburger"
           type="button" data-bs-toggle="offcanvas" data-bs-target="#sidebarMenu" aria-label="Abrir menú">
