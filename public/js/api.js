@@ -204,6 +204,10 @@ export function deleteOrden(id) {
   return post('/ordenes/delete', { id });
 }
 
+export function deleteCuadre(id) {
+  return post('/cuadres/delete', { id });
+}
+
 export function finalizarDiaCuadre(body) {
   return post('/cuadre/finalizar-dia', body);
 }

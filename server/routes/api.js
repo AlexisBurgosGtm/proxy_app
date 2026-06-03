@@ -913,6 +913,23 @@ router.post(
 );
 
 router.post(
+  '/cuadres/delete',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const id = Number(req.body?.id);
+    if (!Number.isInteger(id) || id <= 0) {
+      return res.status(400).json({ error: 'ID de cuadre inválido.' });
+    }
+
+    const existing = await queryOne('SELECT ID FROM cuadres WHERE ID = ?', [id]);
+    if (!existing) return res.status(404).json({ error: 'Cuadre no encontrado.' });
+
+    await execute('DELETE FROM cuadres WHERE ID = ?', [id]);
+    res.json({ ok: true });
+  })
+);
+
+router.post(
   '/ordenes/archivo',
   requireSupervisor,
   asyncHandler(async (req, res) => {

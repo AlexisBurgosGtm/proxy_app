@@ -454,8 +454,11 @@ export async function renderArchivo(root) {
           <td class="text-end text-nowrap">${escapeHtml(formatImporte(c.diferencia))}</td>
           <td>${escapeHtml(c.observaciones || '—')}</td>
           <td class="text-end text-nowrap">
-            <button type="button" class="btn btn-outline-secondary btn-sm btn-archivo-cuadre-reprint" data-id="${c.id}" title="Reimprimir">
-              <i class="fa-solid fa-print me-1"></i>Reimprimir
+            <button type="button" class="btn btn-outline-secondary btn-sm btn-archivo-cuadre-reprint me-1" data-id="${c.id}" title="Reimprimir">
+              <i class="fa-solid fa-print"></i>
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm btn-archivo-cuadre-delete" data-id="${c.id}" title="Eliminar">
+              <i class="fa-solid fa-trash"></i>
             </button>
           </td>
         </tr>`
@@ -671,6 +674,24 @@ export async function renderArchivo(root) {
       const cuadre = cuadres.find((c) => Number(c.id) === id);
       if (!cuadre) return;
       openCuadrePrintTab(buildPrintDataFromArchivoCuadre(cuadre), true);
+      return;
+    }
+
+    const deleteCuadreBtn = e.target.closest('.btn-archivo-cuadre-delete');
+    if (deleteCuadreBtn) {
+      e.preventDefault();
+      void withSubmitGuard(deleteCuadreBtn, async () => {
+        const id = Number(deleteCuadreBtn.dataset.id);
+        const ok = await confirmAction('Eliminar cuadre', '¿Confirma la eliminación de este cuadre?');
+        if (!ok) return;
+        try {
+          await api.deleteCuadre(id);
+          toastSuccess('Cuadre eliminado');
+          await loadList();
+        } catch (err) {
+          toastError(err.message);
+        }
+      });
     }
   });
 
