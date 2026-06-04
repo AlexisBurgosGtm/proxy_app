@@ -725,6 +725,10 @@ export async function renderCuadre(root) {
     );
 
     const efectivo = getEfectivoFromConteo();
+    if (efectivo <= 0) {
+      toastError('El efectivo debe ser mayor que cero para finalizar el día.');
+      return;
+    }
     const diferencia = calcDiferenciaCuadre(efectivo);
     const horaCierre = formatHoraNow();
 

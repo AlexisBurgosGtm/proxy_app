@@ -509,6 +509,9 @@ function validateFinalizarDia(body) {
 
   importe = parseCuadreAmount(rawImporte, 'El importe', errors);
   efectivo = parseCuadreAmount(body.efectivo, 'El efectivo', errors);
+  if (efectivo !== null && efectivo === 0) {
+    errors.push('El efectivo debe ser mayor que cero para finalizar el día.');
+  }
   const documentos = 0;
 
   let diferencia = null;

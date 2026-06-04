@@ -176,19 +176,23 @@ body {
   height: 240px;
 }
 
-.dashboard-categoria-report-card {
+.dashboard-categoria-report-card,
+.dashboard-empleado-report-card {
   border-color: rgba(33, 159, 252, 0.35) !important;
 }
 
-.dashboard-left-col .dashboard-categoria-report-card .card-body {
+.dashboard-left-col .dashboard-categoria-report-card .card-body,
+.dashboard-left-col .dashboard-empleado-report-card .card-body {
   min-height: 12rem;
 }
 
-.dashboard-cat-row {
+.dashboard-cat-row,
+.dashboard-emp-row {
   cursor: pointer;
 }
 
-.dashboard-cat-row:hover {
+.dashboard-cat-row:hover,
+.dashboard-emp-row:hover {
   background-color: rgba(33, 159, 252, 0.08);
 }
 

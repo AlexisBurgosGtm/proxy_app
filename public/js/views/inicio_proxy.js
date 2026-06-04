@@ -33,6 +33,12 @@ function getFilteredOrdenes(ordenes, empleadoCodigo) {
   return ordenes.filter((o) => Number(o.codigo) === cod);
 }
 
+function getFilteredOrdenesByCategoria(ordenes, categoriaFiltro) {
+  if (!categoriaFiltro) return ordenes;
+  const cat = normalizeCategoria(categoriaFiltro);
+  return ordenes.filter((o) => normalizeCategoria(o.descategoria) === cat);
+}
+
 function aggregatePorCategoria(ordenes) {
   const categories = new Map();
 
@@ -44,6 +50,29 @@ function aggregatePorCategoria(ordenes) {
   return [...categories.entries()]
     .map(([descategoria, importe]) => ({ descategoria, importe }))
     .sort((a, b) => b.importe - a.importe);
+}
+
+function normalizeEmpleadoKey(codigo) {
+  return codigo != null && codigo !== '' ? String(codigo) : 'sin';
+}
+
+function aggregatePorEmpleado(ordenes) {
+  const empleadosMap = new Map();
+
+  for (const o of ordenes) {
+    const key = normalizeEmpleadoKey(o.codigo);
+    if (!empleadosMap.has(key)) {
+      empleadosMap.set(key, {
+        key,
+        codigo: o.codigo,
+        empleado_nombre: o.empleado_nombre || 'Sin asignar',
+        importe: 0,
+      });
+    }
+    empleadosMap.get(key).importe += Number(o.importe ?? 0);
+  }
+
+  return [...empleadosMap.values()].sort((a, b) => b.importe - a.importe);
 }
 
 function calcTotal(ordenes) {
@@ -78,6 +107,7 @@ export async function renderInicioProxy(root) {
   };
   let empleados = [];
   let selectedCategoria = null;
+  let selectedEmpleadoKey = null;
 
   root.innerHTML = `
     <main class="container-fluid py-2">
@@ -131,6 +161,38 @@ export async function renderInicioProxy(root) {
               </div>
             </div>
           </div>
+          <div class="card border shadow-sm dashboard-categoria-report-card mt-3 dashboard-empleado-report-card">
+            <div class="card-header card-header-app py-2">
+              <h2 class="h6 mb-0"><i class="fa-solid fa-users me-2"></i>Reporte por empleado</h2>
+            </div>
+            <div class="card-body py-2">
+              <div class="row g-2 align-items-end mb-2 dashboard-reporte-toolbar">
+                <div class="col-sm-7">
+                  <label class="form-label" for="filtroCategoriaReporte">Categoría</label>
+                  <select class="form-select form-select-sm" id="filtroCategoriaReporte">
+                    <option value="">Todas las categorías</option>
+                  </select>
+                </div>
+                <div class="col-sm-5 text-sm-end">
+                  <label class="form-label" for="dashboardTotalEmpleadoReporte">Total reporte</label>
+                  <h3 class="mb-0 text-danger" id="dashboardTotalEmpleadoReporte">Q 0.00</h3>
+                </div>
+              </div>
+              <div class="table-responsive eventos-list-wrap">
+                <table class="table table-sm table-hover small mb-0 dashboard-empleado-table">
+                  <thead>
+                    <tr>
+                      <th>Empleado</th>
+                      <th class="text-end">Importe</th>
+                    </tr>
+                  </thead>
+                  <tbody id="empleadoTableBody">
+                    <tr><td colspan="2" class="text-center text-muted">Cargando...</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
         </div>
         <div class="col-lg-6">
           <div class="card border-0 shadow-sm mb-3 dashboard-chart-card">
@@ -171,9 +233,12 @@ export async function renderInicioProxy(root) {
   await bindLogout();
 
   const categoriaTableBody = document.getElementById('categoriaTableBody');
+  const empleadoTableBody = document.getElementById('empleadoTableBody');
   const totalFechasEl = document.getElementById('dashboardTotalFechas');
   const totalReporteEl = document.getElementById('dashboardTotalImporte');
+  const totalEmpleadoReporteEl = document.getElementById('dashboardTotalEmpleadoReporte');
   const filtroEmpleado = document.getElementById('filtroEmpleado');
+  const filtroCategoriaReporte = document.getElementById('filtroCategoriaReporte');
   const tableColSpan = 2;
 
   function updateTotalFechas() {
@@ -184,8 +249,17 @@ export async function renderInicioProxy(root) {
     return filtroEmpleado.value;
   }
 
+  function getCategoriaFiltroReporte() {
+    const value = filtroCategoriaReporte.value;
+    return value ? decodeURIComponent(value) : '';
+  }
+
   function getOrdenesFiltradas() {
     return getFilteredOrdenes(dashboardData.ordenes, getEmpleadoFiltro());
+  }
+
+  function getOrdenesFiltradasPorCategoria() {
+    return getFilteredOrdenesByCategoria(dashboardData.ordenes, getCategoriaFiltroReporte());
   }
 
   function getOrdenesPorCategoria(descategoria) {
@@ -195,12 +269,12 @@ export async function renderInicioProxy(root) {
     );
   }
 
-  function renderDetalleOrdenesHtml(descategoria, ordenes) {
+  function renderDetalleOrdenesHtml(titulo, ordenes, subtotalLabel, vacioMsg) {
     if (!ordenes.length) {
       return `
         <tr class="dashboard-cat-detail">
           <td colspan="${tableColSpan}" class="text-center text-muted py-2">
-            No hay órdenes en esta categoría con los filtros actuales.
+            ${escapeHtml(vacioMsg)}
           </td>
         </tr>`;
     }
@@ -210,7 +284,7 @@ export async function renderInicioProxy(root) {
       <tr class="dashboard-cat-detail">
         <td colspan="${tableColSpan}" class="p-0">
           <div class="dashboard-cat-detail-head px-2 py-1 small text-muted">
-            <i class="fa-solid fa-list-ul me-1"></i>${escapeHtml(descategoria)}
+            <i class="fa-solid fa-list-ul me-1"></i>${escapeHtml(titulo)}
             <span class="ms-1">(${ordenes.length} orden${ordenes.length === 1 ? '' : 'es'})</span>
           </div>
           <div class="table-responsive">
@@ -221,6 +295,7 @@ export async function renderInicioProxy(root) {
                   <th>Hora</th>
                   <th>Empleado</th>
                   <th>Producto</th>
+                  <th>Categoría</th>
                   <th>Detalles</th>
                   <th class="text-end">Importe</th>
                 </tr>
@@ -234,6 +309,7 @@ export async function renderInicioProxy(root) {
                     <td class="text-nowrap">${escapeHtml(o.hora || '—')}</td>
                     <td>${escapeHtml(o.empleado_nombre || '—')}</td>
                     <td>${escapeHtml(o.desprod || '—')}</td>
+                    <td>${escapeHtml(o.descategoria || '—')}</td>
                     <td>${escapeHtml(o.detalles || '—')}</td>
                     <td class="text-end text-nowrap">${escapeHtml(formatImporte(o.importe))}</td>
                   </tr>`
@@ -242,7 +318,7 @@ export async function renderInicioProxy(root) {
               </tbody>
               <tfoot>
                 <tr>
-                  <th colspan="5" class="text-end">Subtotal categoría</th>
+                  <th colspan="6" class="text-end">${escapeHtml(subtotalLabel)}</th>
                   <th class="text-end text-nowrap">${escapeHtml(formatImporte(detalleTotal))}</th>
                 </tr>
               </tfoot>
@@ -250,6 +326,14 @@ export async function renderInicioProxy(root) {
           </div>
         </td>
       </tr>`;
+  }
+
+  function getOrdenesPorEmpleado(empleadoKey) {
+    return sortOrdenesDetalle(
+      getOrdenesFiltradasPorCategoria().filter(
+        (o) => normalizeEmpleadoKey(o.codigo) === empleadoKey
+      )
+    );
   }
 
   function renderCategoriaTable() {
@@ -289,16 +373,99 @@ export async function renderInicioProxy(root) {
           <td class="text-end text-nowrap">${escapeHtml(formatImporte(group.importe))}</td>
         </tr>`);
       if (isActive) {
-        rows.push(renderDetalleOrdenesHtml(group.descategoria, getOrdenesPorCategoria(group.descategoria)));
+        rows.push(
+          renderDetalleOrdenesHtml(
+            group.descategoria,
+            getOrdenesPorCategoria(group.descategoria),
+            'Subtotal categoría',
+            'No hay órdenes en esta categoría con los filtros actuales.'
+          )
+        );
       }
     }
 
     categoriaTableBody.innerHTML = rows.join('');
   }
 
+  function renderEmpleadoTable() {
+    const ordenes = getOrdenesFiltradasPorCategoria();
+    const groups = aggregatePorEmpleado(ordenes);
+    const total = calcTotal(ordenes);
+    totalEmpleadoReporteEl.textContent = formatImporte(total);
+
+    if (selectedEmpleadoKey && !groups.some((g) => g.key === selectedEmpleadoKey)) {
+      selectedEmpleadoKey = null;
+    }
+
+    if (!dashboardData.ordenes.length) {
+      empleadoTableBody.innerHTML =
+        `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay órdenes en el rango seleccionado.</td></tr>`;
+      return;
+    }
+
+    if (!groups.length) {
+      empleadoTableBody.innerHTML =
+        `<tr><td colspan="${tableColSpan}" class="text-center text-muted">No hay órdenes para la categoría seleccionada.</td></tr>`;
+      return;
+    }
+
+    const rows = [];
+    for (const group of groups) {
+      const isActive = selectedEmpleadoKey === group.key;
+      rows.push(`
+        <tr class="dashboard-emp-row${isActive ? ' table-active' : ''}"
+          data-empleado-key="${encodeURIComponent(group.key)}"
+          role="button" tabindex="0"
+          aria-expanded="${isActive ? 'true' : 'false'}">
+          <td>
+            <i class="fa-solid fa-chevron-${isActive ? 'down' : 'right'} me-2 text-muted dashboard-cat-chevron"></i>
+            ${escapeHtml(group.empleado_nombre)}
+          </td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(group.importe))}</td>
+        </tr>`);
+      if (isActive) {
+        rows.push(
+          renderDetalleOrdenesHtml(
+            group.empleado_nombre,
+            getOrdenesPorEmpleado(group.key),
+            'Subtotal empleado',
+            'No hay órdenes para este empleado con los filtros actuales.'
+          )
+        );
+      }
+    }
+
+    empleadoTableBody.innerHTML = rows.join('');
+  }
+
   function toggleCategoria(descategoria) {
     selectedCategoria = selectedCategoria === descategoria ? null : descategoria;
     renderCategoriaTable();
+  }
+
+  function toggleEmpleado(empleadoKey) {
+    selectedEmpleadoKey = selectedEmpleadoKey === empleadoKey ? null : empleadoKey;
+    renderEmpleadoTable();
+  }
+
+  function fillCategoriaSelect() {
+    const current = filtroCategoriaReporte.value;
+    const cats = new Set();
+    for (const o of dashboardData.ordenes) {
+      cats.add(normalizeCategoria(o.descategoria));
+    }
+    const sorted = [...cats].sort((a, b) => a.localeCompare(b, 'es'));
+    filtroCategoriaReporte.innerHTML =
+      `<option value="">Todas las categorías</option>` +
+      sorted
+        .map(
+          (c) =>
+            `<option value="${encodeURIComponent(c)}">${escapeHtml(c)}</option>`
+        )
+        .join('');
+    if (current && [...filtroCategoriaReporte.options].some((o) => o.value === current)) {
+      filtroCategoriaReporte.value = current;
+    }
   }
 
   function fillEmpleadoSelect() {
@@ -366,7 +533,9 @@ export async function renderInicioProxy(root) {
 
   function refreshDashboardView() {
     updateTotalFechas();
+    fillCategoriaSelect();
     renderCategoriaTable();
+    renderEmpleadoTable();
     void updateCharts();
   }
 
@@ -383,7 +552,10 @@ export async function renderInicioProxy(root) {
     }
 
     selectedCategoria = null;
+    selectedEmpleadoKey = null;
     categoriaTableBody.innerHTML =
+      `<tr><td colspan="${tableColSpan}" class="text-center text-muted">Cargando...</td></tr>`;
+    empleadoTableBody.innerHTML =
       `<tr><td colspan="${tableColSpan}" class="text-center text-muted">Cargando...</td></tr>`;
 
     try {
@@ -399,8 +571,11 @@ export async function renderInicioProxy(root) {
       };
       categoriaTableBody.innerHTML =
         `<tr><td colspan="${tableColSpan}" class="text-center text-danger">Error al cargar datos</td></tr>`;
+      empleadoTableBody.innerHTML =
+        `<tr><td colspan="${tableColSpan}" class="text-center text-danger">Error al cargar datos</td></tr>`;
       totalFechasEl.textContent = formatImporte(0);
       totalReporteEl.textContent = formatImporte(0);
+      totalEmpleadoReporteEl.textContent = formatImporte(0);
       destroyDashboardCharts();
       toastError(err.message);
     }
@@ -415,6 +590,11 @@ export async function renderInicioProxy(root) {
     renderCategoriaTable();
   });
 
+  filtroCategoriaReporte.addEventListener('change', () => {
+    selectedEmpleadoKey = null;
+    renderEmpleadoTable();
+  });
+
   categoriaTableBody.addEventListener('click', (e) => {
     const row = e.target.closest('.dashboard-cat-row');
     if (!row) return;
@@ -427,6 +607,20 @@ export async function renderInicioProxy(root) {
     if (!row) return;
     e.preventDefault();
     toggleCategoria(decodeURIComponent(row.dataset.categoria || ''));
+  });
+
+  empleadoTableBody.addEventListener('click', (e) => {
+    const row = e.target.closest('.dashboard-emp-row');
+    if (!row) return;
+    toggleEmpleado(decodeURIComponent(row.dataset.empleadoKey || ''));
+  });
+
+  empleadoTableBody.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.dashboard-emp-row');
+    if (!row) return;
+    e.preventDefault();
+    toggleEmpleado(decodeURIComponent(row.dataset.empleadoKey || ''));
   });
 
   function onFiltroFechaChange() {
