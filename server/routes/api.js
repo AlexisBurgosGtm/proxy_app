@@ -10,6 +10,8 @@ const {
   validateOrden,
   validateOrdenUpdate,
   validateFinalizarDia,
+  validateObjetivosPeriodo,
+  validateObjetivosSave,
   parseDateOnly,
   sanitizeMysqlText,
 } = require('../validators');
@@ -51,6 +53,7 @@ function mapCategoriaRow(row) {
   return {
     codcategoria: row.CODCATEGORIA ?? row.codcategoria,
     descategoria: row.DESCATEGORIA ?? row.descategoria ?? '',
+    medible: row.MEDIBLE ?? row.medible ?? 'SI',
   };
 }
 
@@ -194,10 +197,13 @@ router.post(
   '/empleados/list',
   asyncHandler(async (req, res) => {
     const onlyActivos = req.body?.soloActivos === true;
+    const includeClave = req.auth.tipo === 'SUPERVISOR';
+    const fields = includeClave
+      ? 'codigo, nombre, telefono, tipo, estado, color, clave'
+      : 'codigo, nombre, telefono, tipo, estado, color';
     const sql = onlyActivos
-      ? `SELECT codigo, nombre, telefono, tipo, estado, color FROM empleados
-         WHERE estado = 'ACTIVO' ORDER BY nombre`
-      : `SELECT codigo, nombre, telefono, tipo, estado, color FROM empleados ORDER BY nombre`;
+      ? `SELECT ${fields} FROM empleados WHERE estado = 'ACTIVO' ORDER BY nombre`
+      : `SELECT ${fields} FROM empleados ORDER BY nombre`;
     res.json(await query(sql));
   })
 );
@@ -525,12 +531,40 @@ router.post(
       [desdeParsed.iso, hastaParsed.iso]
     );
 
+    const desdeDate = new Date(`${desdeParsed.iso}T00:00:00`);
+    const mesObjetivo = desdeDate.getMonth() + 1;
+    const anioObjetivo = desdeDate.getFullYear();
+    const { start: mesInicio, end: mesFin } = monthDateBounds(anioObjetivo, mesObjetivo);
+
+    const objetivosMesRows = await query(
+      `SELECT e.codigo, e.nombre,
+              COALESCE(obj.OBJETIVO, 0) AS objetivo,
+              COALESCE(ventas.importe, 0) AS importe
+       FROM empleados e
+       LEFT JOIN objetivos obj
+         ON obj.CODIGO = e.codigo AND obj.MES = ? AND obj.ANIO = ?
+       LEFT JOIN (
+         SELECT o.CODIGO, COALESCE(SUM(o.IMPORTE), 0) AS importe
+         FROM ordenes o
+         INNER JOIN productos p ON p.CODPROD = o.CODPROD
+         INNER JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+         WHERE o.FECHA >= ? AND o.FECHA <= ?
+           AND UPPER(COALESCE(c.MEDIBLE, 'SI')) = 'SI'
+         GROUP BY o.CODIGO
+       ) ventas ON ventas.CODIGO = e.codigo
+       WHERE e.estado = 'ACTIVO'
+       ORDER BY e.nombre`,
+      [mesObjetivo, anioObjetivo, mesInicio, mesFin]
+    );
+
     const ordenes = ordenesRows.map(mapOrdenDashboardRow);
     const total = ordenes.reduce((sum, o) => sum + o.importe, 0);
 
     res.json({
       ordenes,
       total,
+      mes_objetivo: mesObjetivo,
+      anio_objetivo: anioObjetivo,
       importe_por_fecha: importePorFechaRows.map((row) => ({
         fecha: toDateString(row.FECHA ?? row.fecha),
         importe: Number(row.importe ?? row.IMPORTE ?? 0),
@@ -543,6 +577,21 @@ router.post(
         empleado_nombre: row.empleado_nombre ?? row.nombre ?? 'Sin asignar',
         importe: Number(row.importe ?? row.IMPORTE ?? 0),
       })),
+      objetivos_mes: objetivosMesRows.map((row) => {
+        const objetivo = Number(row.objetivo ?? 0);
+        const importe = Number(row.importe ?? 0);
+        const logrado = Math.round((objetivo - importe) * 100) / 100;
+        const porcentaje =
+          objetivo > 0 ? Math.round((importe / objetivo) * 1000) / 10 : null;
+        return {
+          codigo: row.codigo,
+          empleado_nombre: row.nombre ?? 'Sin asignar',
+          objetivo,
+          importe,
+          logrado,
+          porcentaje,
+        };
+      }),
     });
   })
 );
@@ -1073,7 +1122,7 @@ router.post(
   requireSupervisor,
   asyncHandler(async (req, res) => {
     const rows = await query(
-      'SELECT CODCATEGORIA, DESCATEGORIA FROM categorias ORDER BY DESCATEGORIA'
+      'SELECT CODCATEGORIA, DESCATEGORIA, MEDIBLE FROM categorias ORDER BY DESCATEGORIA'
     );
     res.json(rows.map(mapCategoriaRow));
   })
@@ -1085,7 +1134,7 @@ router.post(
   asyncHandler(async (req, res) => {
     const codcategoria = Number(req.body?.codcategoria);
     const row = await queryOne(
-      'SELECT CODCATEGORIA, DESCATEGORIA FROM categorias WHERE CODCATEGORIA = ?',
+      'SELECT CODCATEGORIA, DESCATEGORIA, MEDIBLE FROM categorias WHERE CODCATEGORIA = ?',
       [codcategoria]
     );
     if (!row) return res.status(404).json({ error: 'Categoría no encontrada.' });
@@ -1100,12 +1149,13 @@ router.post(
     const result = validateCategoria(req.body);
     if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
 
-    const info = await execute('INSERT INTO categorias (DESCATEGORIA) VALUES (?)', [
+    const info = await execute('INSERT INTO categorias (DESCATEGORIA, MEDIBLE) VALUES (?, ?)', [
       result.data.descategoria,
+      result.data.medible,
     ]);
 
     const row = await queryOne(
-      'SELECT CODCATEGORIA, DESCATEGORIA FROM categorias WHERE CODCATEGORIA = ?',
+      'SELECT CODCATEGORIA, DESCATEGORIA, MEDIBLE FROM categorias WHERE CODCATEGORIA = ?',
       [info.insertId]
     );
     res.status(201).json(mapCategoriaRow(row));
@@ -1125,13 +1175,14 @@ router.post(
     const result = validateCategoria(req.body);
     if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
 
-    await execute('UPDATE categorias SET DESCATEGORIA = ? WHERE CODCATEGORIA = ?', [
+    await execute('UPDATE categorias SET DESCATEGORIA = ?, MEDIBLE = ? WHERE CODCATEGORIA = ?', [
       result.data.descategoria,
+      result.data.medible,
       codcategoria,
     ]);
 
     const row = await queryOne(
-      'SELECT CODCATEGORIA, DESCATEGORIA FROM categorias WHERE CODCATEGORIA = ?',
+      'SELECT CODCATEGORIA, DESCATEGORIA, MEDIBLE FROM categorias WHERE CODCATEGORIA = ?',
       [codcategoria]
     );
     res.json(mapCategoriaRow(row));
@@ -1511,6 +1562,127 @@ router.post(
 
     await execute('DELETE FROM productos WHERE CODPROD = ?', [codprod]);
     res.json({ ok: true });
+  })
+);
+
+function pad2(n) {
+  return String(n).padStart(2, '0');
+}
+
+function monthDateBounds(anio, mes) {
+  const start = `${anio}-${pad2(mes)}-01`;
+  const lastDay = new Date(anio, mes, 0).getDate();
+  const end = `${anio}-${pad2(mes)}-${pad2(lastDay)}`;
+  return { start, end, daysInMonth: lastDay };
+}
+
+router.post(
+  '/objetivos/list',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const result = validateObjetivosPeriodo(req.body || {});
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+
+    const { mes, anio } = result.data;
+    const rows = await query(
+      `SELECT e.codigo, e.nombre, e.tipo, e.estado,
+              COALESCE(o.OBJETIVO, 0) AS objetivo
+       FROM empleados e
+       LEFT JOIN objetivos o
+         ON o.CODIGO = e.codigo AND o.MES = ? AND o.ANIO = ?
+       WHERE e.estado = 'ACTIVO'
+       ORDER BY e.nombre`,
+      [mes, anio]
+    );
+
+    res.json(
+      rows.map((row) => ({
+        codigo: row.codigo,
+        nombre: row.nombre,
+        tipo: row.tipo,
+        estado: row.estado,
+        objetivo: Number(row.objetivo ?? 0),
+      }))
+    );
+  })
+);
+
+router.post(
+  '/objetivos/save',
+  requireSupervisor,
+  asyncHandler(async (req, res) => {
+    const result = validateObjetivosSave(req.body || {});
+    if (!result.valid) return res.status(400).json({ error: result.errors.join(' ') });
+
+    const { mes, anio, items } = result.data;
+    for (const item of items) {
+      if (!(await empleadoExists(item.codigo))) {
+        return res.status(400).json({ error: `Empleado ${item.codigo} no encontrado.` });
+      }
+    }
+
+    for (const item of items) {
+      await execute(
+        `INSERT INTO objetivos (CODIGO, MES, ANIO, OBJETIVO)
+         VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE OBJETIVO = VALUES(OBJETIVO)`,
+        [item.codigo, mes, anio, item.objetivo]
+      );
+    }
+
+    res.json({ ok: true });
+  })
+);
+
+router.post(
+  '/objetivos/progreso',
+  asyncHandler(async (req, res) => {
+    const codigo = Number(req.auth.empleado_codigo);
+    if (!Number.isInteger(codigo) || codigo <= 0) {
+      return res.status(400).json({ error: 'Empleado de sesión no válido.' });
+    }
+
+    const now = new Date();
+    const mes = now.getMonth() + 1;
+    const anio = now.getFullYear();
+    const dia = now.getDate();
+    const { start, end, daysInMonth } = monthDateBounds(anio, mes);
+
+    const objetivoRow = await queryOne(
+      'SELECT OBJETIVO FROM objetivos WHERE CODIGO = ? AND MES = ? AND ANIO = ?',
+      [codigo, mes, anio]
+    );
+    const objetivo = Number(objetivoRow?.OBJETIVO ?? objetivoRow?.objetivo ?? 0);
+
+    const importeRow = await queryOne(
+      `SELECT COALESCE(SUM(o.IMPORTE), 0) AS importe
+       FROM ordenes o
+       INNER JOIN productos p ON p.CODPROD = o.CODPROD
+       INNER JOIN categorias c ON c.CODCATEGORIA = p.CODCATEGORIA
+       WHERE o.CODIGO = ?
+         AND o.FECHA >= ? AND o.FECHA <= ?
+         AND UPPER(COALESCE(c.MEDIBLE, 'SI')) = 'SI'`,
+      [codigo, start, end]
+    );
+    const importe = Number(importeRow?.importe ?? 0);
+
+    const porcentaje =
+      objetivo > 0 ? Math.round((importe / objetivo) * 1000) / 10 : null;
+    const esperado = objetivo > 0 ? objetivo * (dia / daysInMonth) : 0;
+    const onTrack = objetivo > 0 ? importe >= esperado : null;
+
+    res.json({
+      codigo,
+      mes,
+      anio,
+      dia,
+      daysInMonth,
+      objetivo,
+      importe,
+      porcentaje,
+      onTrack,
+      hasObjetivo: objetivo > 0,
+    });
   })
 );
 

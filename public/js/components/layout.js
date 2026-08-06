@@ -1,5 +1,5 @@
 import * as api from '../api.js';
-import { clearSession, isSupervisor } from '../auth.js';
+import { clearSession, isSupervisor, isAuthenticated } from '../auth.js';
 import { navigate } from '../router.js';
 import { confirmAction, toastSuccess } from '../alerts.js';
 
@@ -10,6 +10,7 @@ const ALL_PAGES = [
   { id: 'archivo', label: 'Archivo', path: 'archivo', icon: 'fa-box-archive', supervisorOnly: true },
   { id: 'clientes', label: 'Clientes', path: 'clientes', icon: 'fa-building', supervisorOnly: true },
   { id: 'empleados', label: 'Empleados', path: 'empleados', icon: 'fa-user-group', supervisorOnly: true },
+  { id: 'objetivos', label: 'Gestión de Objetivos', path: 'objetivos', icon: 'fa-bullseye', supervisorOnly: true },
   { id: 'productos', label: 'Productos', path: 'productos', icon: 'fa-box', supervisorOnly: true },
   { id: 'categorias', label: 'Categorías', path: 'categorias', icon: 'fa-tags', supervisorOnly: true },
   { id: 'config', label: 'Config', path: 'config', icon: 'fa-gear', supervisorOnly: true },
@@ -67,6 +68,7 @@ function mountAppShell() {
         <span class="navbar-brand mb-0 h6 ms-2" id="appShellTitle"></span>
         <div class="ms-auto d-flex align-items-center gap-2">
           <span id="appShellExtra"></span>
+          <span id="objetivoProgresoBadge" class="objetivo-progreso-badge d-none" aria-label="Productividad del mes">—</span>
           ${renderLogoutButton()}
         </div>
       </div>
@@ -91,6 +93,42 @@ function mountAppShell() {
   });
 
   shellMounted = true;
+}
+
+export function hideObjetivoBadge() {
+  const badge = document.getElementById('objetivoProgresoBadge');
+  if (badge) {
+    badge.classList.add('d-none');
+    badge.classList.remove('objetivo-progreso-verde', 'objetivo-progreso-rojo');
+    badge.textContent = '—';
+  }
+}
+
+export async function refreshObjetivoBadge() {
+  const badge = document.getElementById('objetivoProgresoBadge');
+  if (!badge) return;
+
+  if (!isAuthenticated()) {
+    hideObjetivoBadge();
+    return;
+  }
+
+  try {
+    const data = await api.getObjetivoProgreso();
+    if (!data?.hasObjetivo || data.porcentaje == null) {
+      hideObjetivoBadge();
+      return;
+    }
+
+    const pct = Number(data.porcentaje);
+    const display = Number.isInteger(pct) ? String(pct) : pct.toFixed(1);
+    badge.textContent = `Productividad del mes: ${display}%`;
+    badge.classList.remove('d-none', 'objetivo-progreso-verde', 'objetivo-progreso-rojo');
+    badge.classList.add(data.onTrack ? 'objetivo-progreso-verde' : 'objetivo-progreso-rojo');
+    badge.title = `Productividad del mes: ${display}%`;
+  } catch {
+    hideObjetivoBadge();
+  }
 }
 
 export function closeSidebar() {
@@ -122,6 +160,7 @@ export function showAppShell() {
 export function hideAppShell() {
   closeSidebar();
   document.getElementById('appShell')?.classList.add('d-none');
+  hideObjetivoBadge();
 }
 
 export function updateAppShell(activePage, pageTitle, extraHeaderHtml = '') {
@@ -130,6 +169,7 @@ export function updateAppShell(activePage, pageTitle, extraHeaderHtml = '') {
   document.getElementById('appShellTitle').textContent = pageTitle;
   document.getElementById('appShellExtra').innerHTML = extraHeaderHtml;
   document.getElementById('sidebarNav').innerHTML = buildNavLinks(activePage);
+  refreshObjetivoBadge();
 }
 
 /** @deprecated Use updateAppShell() — shell is persistent and not rendered inside views. */

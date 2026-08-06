@@ -211,7 +211,8 @@ body {
   white-space: nowrap;
 }
 
-.dashboard-categoria-chart-wrap {
+.dashboard-categoria-chart-wrap,
+.dashboard-objetivo-logro-chart-wrap {
   position: relative;
   min-height: 140px;
 }
@@ -219,6 +220,11 @@ body {
 .dashboard-empleado-chart-wrap {
   position: relative;
   min-height: 160px;
+}
+
+.dashboard-objetivos-table-wrap {
+  max-height: 280px;
+  overflow-y: auto;
 }
 
 @media (max-width: 991.98px) {
@@ -666,6 +672,45 @@ main {
 .fab-cuadre-ordenes:focus {
   transform: scale(1.04);
   color: #fff;
+}
+
+.objetivo-progreso-badge {
+  display: inline-flex;
+  align-items: center;
+  min-width: 18rem;
+  justify-content: center;
+  padding: 0.45rem 1.1rem;
+  border-radius: 999px;
+  font-size: 1.56rem;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+  color: #fff;
+  user-select: none;
+}
+
+.objetivo-progreso-verde {
+  background-color: #16a34a;
+}
+
+.objetivo-progreso-rojo {
+  background-color: #dc2626;
+}
+
+.objetivo-monto-group {
+  width: 7rem;
+  margin-left: auto;
+}
+
+.objetivo-monto-group .input-group-text {
+  padding: 0.2rem 0.4rem;
+  font-size: 0.8rem;
+}
+
+.objetivo-monto-group .objetivo-monto {
+  padding-left: 0.35rem;
+  padding-right: 0.35rem;
+  text-align: right;
 }
 
 .cuadre-ordenes-list-wrap {

@@ -57,6 +57,7 @@ export function canAccessRoute(path) {
       'clientes',
       'categorias',
       'productos',
+      'objetivos',
       'cuadre',
       'config',
     ].includes(path);

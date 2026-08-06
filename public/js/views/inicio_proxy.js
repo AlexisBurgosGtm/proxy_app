@@ -3,8 +3,7 @@ import { updateAppShell, bindLogout } from '../components/layout.js';
 import { toastError } from '../alerts.js';
 import { formatDate, formatImporte } from '../format.js';
 import {
-  renderImporteLineChartFromOrdenes,
-  renderCategoriaBarChart,
+  renderObjetivoLogroBarChart,
   renderEmpleadoBarChart,
   destroyDashboardCharts,
 } from '../components/dashboard-chart.js';
@@ -98,11 +97,30 @@ function sortOrdenesDetalle(ordenes) {
 export async function renderInicioProxy(root) {
   updateAppShell('inicio_proxy', 'Inicio');
   const today = todayDate();
+  const MESES_LABEL = [
+    '',
+    'Enero',
+    'Febrero',
+    'Marzo',
+    'Abril',
+    'Mayo',
+    'Junio',
+    'Julio',
+    'Agosto',
+    'Septiembre',
+    'Octubre',
+    'Noviembre',
+    'Diciembre',
+  ];
+
   let dashboardData = {
     ordenes: [],
     importe_por_fecha: [],
     importe_por_categoria: [],
     importe_por_empleado: [],
+    objetivos_mes: [],
+    mes_objetivo: null,
+    anio_objetivo: null,
     total: 0,
   };
   let empleados = [];
@@ -196,22 +214,36 @@ export async function renderInicioProxy(root) {
         </div>
         <div class="col-lg-6">
           <div class="card border-0 shadow-sm mb-3 dashboard-chart-card">
-            <div class="card-header card-header-app py-2">
-              <h2 class="h6 mb-0"><i class="fa-solid fa-chart-line me-2"></i>Importe por fecha</h2>
+            <div class="card-header card-header-app py-2 d-flex justify-content-between align-items-center gap-2">
+              <h2 class="h6 mb-0"><i class="fa-solid fa-bullseye me-2"></i>Objetivos del mes</h2>
+              <span class="small text-muted" id="objetivosMesLabel"></span>
             </div>
             <div class="card-body py-2">
-              <div class="dashboard-importe-chart-wrap">
-                <canvas id="importePorFechaChart" aria-label="Gráfica de importe por fecha"></canvas>
+              <div class="table-responsive dashboard-objetivos-table-wrap">
+                <table class="table table-sm table-hover small mb-0">
+                  <thead>
+                    <tr>
+                      <th>Empleado</th>
+                      <th class="text-end">Objetivo</th>
+                      <th class="text-end">Importe</th>
+                      <th class="text-end">Logrado</th>
+                      <th class="text-end">% logrado</th>
+                    </tr>
+                  </thead>
+                  <tbody id="objetivosMesTableBody">
+                    <tr><td colspan="5" class="text-center text-muted">Cargando...</td></tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
           <div class="card border-0 shadow-sm mb-3 dashboard-chart-card dashboard-chart-card-sm">
             <div class="card-header card-header-app py-2">
-              <h2 class="h6 mb-0"><i class="fa-solid fa-chart-bar me-2"></i>Importe por categoría</h2>
+              <h2 class="h6 mb-0"><i class="fa-solid fa-chart-bar me-2"></i>Logro de objetivo por empleado</h2>
             </div>
             <div class="card-body py-2">
-              <div class="dashboard-categoria-chart-wrap">
-                <canvas id="importePorCategoriaChart" aria-label="Gráfica de importe por categoría"></canvas>
+              <div class="dashboard-objetivo-logro-chart-wrap">
+                <canvas id="objetivoLogroChart" aria-label="Gráfica de logro de objetivo por empleado"></canvas>
               </div>
             </div>
           </div>
@@ -234,12 +266,53 @@ export async function renderInicioProxy(root) {
 
   const categoriaTableBody = document.getElementById('categoriaTableBody');
   const empleadoTableBody = document.getElementById('empleadoTableBody');
+  const objetivosMesTableBody = document.getElementById('objetivosMesTableBody');
+  const objetivosMesLabel = document.getElementById('objetivosMesLabel');
   const totalFechasEl = document.getElementById('dashboardTotalFechas');
   const totalReporteEl = document.getElementById('dashboardTotalImporte');
   const totalEmpleadoReporteEl = document.getElementById('dashboardTotalEmpleadoReporte');
   const filtroEmpleado = document.getElementById('filtroEmpleado');
   const filtroCategoriaReporte = document.getElementById('filtroCategoriaReporte');
   const tableColSpan = 2;
+
+  function formatPorcentaje(value) {
+    if (value == null || Number.isNaN(Number(value))) return '—';
+    const n = Number(value);
+    return `${Number.isInteger(n) ? n : n.toFixed(1)}%`;
+  }
+
+  function renderObjetivosMesTable() {
+    const mes = dashboardData.mes_objetivo;
+    const anio = dashboardData.anio_objetivo;
+    if (mes && anio) {
+      objetivosMesLabel.textContent = `${MESES_LABEL[mes] || mes} ${anio}`;
+    } else {
+      objetivosMesLabel.textContent = '';
+    }
+
+    const rows = dashboardData.objetivos_mes || [];
+    if (!rows.length) {
+      objetivosMesTableBody.innerHTML =
+        '<tr><td colspan="5" class="text-center text-muted">Sin empleados activos.</td></tr>';
+      return;
+    }
+
+    objetivosMesTableBody.innerHTML = rows
+      .map((row) => {
+        const pct = row.porcentaje;
+        const pctClass =
+          pct == null ? '' : pct >= 100 ? 'text-success fw-semibold' : 'text-danger fw-semibold';
+        return `
+        <tr>
+          <td>${escapeHtml(row.empleado_nombre || '—')}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(row.objetivo))}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(row.importe))}</td>
+          <td class="text-end text-nowrap">${escapeHtml(formatImporte(row.logrado))}</td>
+          <td class="text-end text-nowrap ${pctClass}">${escapeHtml(formatPorcentaje(pct))}</td>
+        </tr>`;
+      })
+      .join('');
+  }
 
   function updateTotalFechas() {
     totalFechasEl.textContent = formatImporte(dashboardData.total ?? 0);
@@ -495,8 +568,7 @@ export async function renderInicioProxy(root) {
   async function updateCharts() {
     const desde = document.getElementById('filtroDesde').value;
     const hasta = document.getElementById('filtroHasta').value;
-    const lineCanvas = document.getElementById('importePorFechaChart');
-    const catCanvas = document.getElementById('importePorCategoriaChart');
+    const logroCanvas = document.getElementById('objetivoLogroChart');
     const empCanvas = document.getElementById('importePorEmpleadoChart');
 
     if (!desde || !hasta || desde > hasta) {
@@ -505,19 +577,14 @@ export async function renderInicioProxy(root) {
     }
 
     try {
-      await renderImporteLineChartFromOrdenes(
-        lineCanvas,
-        dashboardData.importe_por_fecha,
-        desde,
-        hasta
+      const logroItems = (dashboardData.objetivos_mes || []).filter(
+        (row) => Number(row.objetivo) > 0
       );
-
-      const catCount = dashboardData.importe_por_categoria.length;
-      const catWrap = catCanvas.closest('.dashboard-categoria-chart-wrap');
-      if (catWrap) {
-        catWrap.style.height = `${Math.max(140, catCount * 28)}px`;
+      const logroWrap = logroCanvas?.closest('.dashboard-objetivo-logro-chart-wrap');
+      if (logroWrap) {
+        logroWrap.style.height = `${Math.max(140, Math.max(logroItems.length, 1) * 32)}px`;
       }
-      await renderCategoriaBarChart(catCanvas, dashboardData.importe_por_categoria);
+      await renderObjetivoLogroBarChart(logroCanvas, dashboardData.objetivos_mes);
 
       const empCount = dashboardData.importe_por_empleado.length;
       const empWrap = empCanvas.closest('.dashboard-empleado-chart-wrap');
@@ -536,6 +603,7 @@ export async function renderInicioProxy(root) {
     fillCategoriaSelect();
     renderCategoriaTable();
     renderEmpleadoTable();
+    renderObjetivosMesTable();
     void updateCharts();
   }
 
@@ -567,12 +635,18 @@ export async function renderInicioProxy(root) {
         importe_por_fecha: [],
         importe_por_categoria: [],
         importe_por_empleado: [],
+        objetivos_mes: [],
+        mes_objetivo: null,
+        anio_objetivo: null,
         total: 0,
       };
       categoriaTableBody.innerHTML =
         `<tr><td colspan="${tableColSpan}" class="text-center text-danger">Error al cargar datos</td></tr>`;
       empleadoTableBody.innerHTML =
         `<tr><td colspan="${tableColSpan}" class="text-center text-danger">Error al cargar datos</td></tr>`;
+      objetivosMesTableBody.innerHTML =
+        '<tr><td colspan="5" class="text-center text-danger">Error al cargar datos</td></tr>';
+      objetivosMesLabel.textContent = '';
       totalFechasEl.textContent = formatImporte(0);
       totalReporteEl.textContent = formatImporte(0);
       totalEmpleadoReporteEl.textContent = formatImporte(0);

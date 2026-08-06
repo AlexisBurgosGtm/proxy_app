@@ -12,6 +12,7 @@ import { renderConfig } from './views/config.js';
 import { renderCategories } from './views/categories.js';
 import { renderProducts } from './views/products.js';
 import { renderCuadre } from './views/cuadre.js';
+import { renderObjetivos } from './views/objetivos.js';
 
 const routes = {
   login: { render: renderLogin, auth: false },
@@ -23,6 +24,7 @@ const routes = {
   clientes: { render: renderClients, auth: true },
   categorias: { render: renderCategories, auth: true },
   productos: { render: renderProducts, auth: true },
+  objetivos: { render: renderObjetivos, auth: true },
   cuadre: { render: renderCuadre, auth: true },
   config: { render: renderConfig, auth: true },
 };

@@ -445,10 +445,14 @@ function validateTicket(body, partial = false) {
   };
 }
 
+const SI_NO_VALUES = ['SI', 'NO'];
+
 function validateCategoria(body, partial = false) {
   const errors = [];
   const descategoria =
     body.descategoria !== undefined ? String(body.descategoria).trim() : undefined;
+  const medible =
+    body.medible !== undefined ? String(body.medible).trim().toUpperCase() : undefined;
 
   if (!partial || descategoria !== undefined) {
     if (!descategoria || descategoria.length === 0) {
@@ -457,15 +461,22 @@ function validateCategoria(body, partial = false) {
       errors.push('La descripción no puede superar 255 caracteres.');
     }
   }
+  if (!partial || medible !== undefined) {
+    const value = medible !== undefined ? medible : partial ? undefined : 'SI';
+    if (value !== undefined && !SI_NO_VALUES.includes(value)) {
+      errors.push('Medible debe ser SI o NO.');
+    }
+  }
 
   return {
     valid: errors.length === 0,
     errors,
-    data: { descategoria },
+    data: {
+      descategoria,
+      medible: medible !== undefined ? medible : partial ? undefined : 'SI',
+    },
   };
 }
-
-const SI_NO_VALUES = ['SI', 'NO'];
 
 function sanitizeDetallesOrden(value, maxLen = 300) {
   if (value === undefined || value === null) return null;
@@ -658,6 +669,67 @@ function validateProducto(body, partial = false) {
   };
 }
 
+function validateObjetivosPeriodo(body) {
+  const errors = [];
+  const mes = Number(body.mes);
+  const anio = Number(body.anio);
+
+  if (!Number.isInteger(mes) || mes < 1 || mes > 12) {
+    errors.push('El mes debe ser un número entre 1 y 12.');
+  }
+  if (!Number.isInteger(anio) || anio < 2000 || anio > 2100) {
+    errors.push('El año no es válido.');
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    data: { mes, anio },
+  };
+}
+
+function validateObjetivosSave(body) {
+  const periodo = validateObjetivosPeriodo(body);
+  const errors = [...periodo.errors];
+  const items = Array.isArray(body.items) ? body.items : null;
+
+  if (!items) {
+    errors.push('Debe enviar la lista de objetivos.');
+  }
+
+  const dataItems = [];
+  if (items) {
+    for (const item of items) {
+      const codigo = Number(item?.codigo);
+      if (!Number.isInteger(codigo) || codigo <= 0) {
+        errors.push('Hay un código de empleado inválido.');
+        continue;
+      }
+      const raw = item?.objetivo;
+      if (raw === undefined || raw === null || raw === '') {
+        dataItems.push({ codigo, objetivo: 0 });
+        continue;
+      }
+      const num = Number(String(raw).replace(/,/g, ''));
+      if (Number.isNaN(num) || num < 0) {
+        errors.push(`El objetivo del empleado ${codigo} debe ser un número mayor o igual a 0.`);
+        continue;
+      }
+      dataItems.push({ codigo, objetivo: Math.round(num * 100) / 100 });
+    }
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    data: {
+      mes: periodo.data.mes,
+      anio: periodo.data.anio,
+      items: dataItems,
+    },
+  };
+}
+
 module.exports = {
   TELEFONO_REGEX,
   EVENTO_ESTATUS,
@@ -676,6 +748,8 @@ module.exports = {
   validateOrden,
   validateOrdenUpdate,
   validateFinalizarDia,
+  validateObjetivosPeriodo,
+  validateObjetivosSave,
   sanitizeDetallesOrden,
   parseDateOnly,
   sanitizeMysqlText,

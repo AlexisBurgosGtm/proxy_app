@@ -166,6 +166,22 @@ async function ensureProductosSchemaUpdates() {
   }
 }
 
+async function ensureCategoriasSchemaUpdates() {
+  const tables = await query(
+    `SELECT TABLE_NAME FROM information_schema.TABLES
+     WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'categorias'`
+  );
+  if (!tables.length) return;
+
+  const columns = await query('SHOW COLUMNS FROM categorias');
+  const byName = Object.fromEntries(columns.map((c) => [c.Field, c]));
+  if (!byName.MEDIBLE) {
+    await query(
+      `ALTER TABLE categorias ADD COLUMN MEDIBLE VARCHAR(2) NOT NULL DEFAULT 'SI'`
+    );
+  }
+}
+
 async function ensureCuadresSchema() {
   await query(
     `CREATE TABLE IF NOT EXISTS cuadres (
@@ -249,6 +265,22 @@ async function ensureOrdenesSchemaUpdates() {
   }
 }
 
+async function ensureObjetivosSchema() {
+  await query(
+    `CREATE TABLE IF NOT EXISTS objetivos (
+      ID INT AUTO_INCREMENT PRIMARY KEY,
+      CODIGO INT NOT NULL,
+      MES INT NOT NULL,
+      ANIO INT NOT NULL,
+      OBJETIVO DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      UNIQUE KEY uk_objetivos_codigo_anio_mes (CODIGO, ANIO, MES),
+      INDEX idx_objetivos_anio_mes (ANIO, MES),
+      CONSTRAINT fk_objetivos_empleado
+        FOREIGN KEY (CODIGO) REFERENCES empleados(codigo) ON DELETE RESTRICT
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`
+  );
+}
+
 async function ensureTicketsFotosMigration() {
   const tables = await query(
     `SELECT TABLE_NAME FROM information_schema.TABLES
@@ -289,9 +321,11 @@ async function initDb() {
   await ensureTicketSchemaUpdates();
   await ensureClienteSchemaUpdates();
   await ensureProductosSchemaUpdates();
+  await ensureCategoriasSchemaUpdates();
   await ensureOrdenesSchemaUpdates();
   await ensureCuadresSchema();
   await migrateCortesToCuadres();
+  await ensureObjetivosSchema();
   await ensureTicketsFotosMigration();
 
   const countRow = await queryOne('SELECT COUNT(*) AS total FROM empleados');

@@ -3,6 +3,7 @@ import { formatDate, formatImporte } from '../format.js';
 let lineChartInstance = null;
 let categoriaChartInstance = null;
 let empleadoChartInstance = null;
+let objetivoLogroChartInstance = null;
 
 function pad(n) {
   return String(n).padStart(2, '0');
@@ -57,10 +58,18 @@ export function destroyEmpleadoChart() {
   }
 }
 
+export function destroyObjetivoLogroChart() {
+  if (objetivoLogroChartInstance) {
+    objetivoLogroChartInstance.destroy();
+    objetivoLogroChartInstance = null;
+  }
+}
+
 export function destroyDashboardCharts() {
   destroyImporteChart();
   destroyCategoriaChart();
   destroyEmpleadoChart();
+  destroyObjetivoLogroChart();
 }
 
 function horizontalBarOptions() {
@@ -217,6 +226,63 @@ export async function renderEmpleadoBarChart(canvas, importePorEmpleado) {
       ],
     },
     options: horizontalBarOptions(),
+  });
+}
+
+export async function renderObjetivoLogroBarChart(canvas, objetivosMes) {
+  if (!canvas) return;
+
+  destroyObjetivoLogroChart();
+
+  const items = (objetivosMes || []).filter((row) => Number(row.objetivo) > 0);
+  const labels = items.map((row) => row.empleado_nombre || 'Sin asignar');
+  const values = items.map((row) =>
+    row.porcentaje == null ? 0 : Number(row.porcentaje)
+  );
+  const Chart = await loadChartJs();
+
+  objetivoLogroChartInstance = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: '% logrado',
+          data: values,
+          backgroundColor: values.map((v) =>
+            v >= 100 ? 'rgba(22, 163, 74, 0.8)' : 'rgba(220, 38, 38, 0.75)'
+          ),
+          borderColor: values.map((v) => (v >= 100 ? '#15803d' : '#b91c1c')),
+          borderWidth: 1,
+        },
+      ],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => ` Logro: ${ctx.parsed.x}%`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          beginAtZero: true,
+          ticks: {
+            callback: (value) => `${value}%`,
+          },
+        },
+        y: {
+          ticks: {
+            autoSkip: false,
+          },
+        },
+      },
+    },
   });
 }
 

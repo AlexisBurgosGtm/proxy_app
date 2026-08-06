@@ -43,6 +43,7 @@ export async function renderEmployees(root) {
               <th>Código</th>
               <th>Nombre</th>
               <th>Teléfono</th>
+              <th>Clave</th>
               <th>Color</th>
               <th>Tipo</th>
               <th>Estado</th>
@@ -50,7 +51,7 @@ export async function renderEmployees(root) {
             </tr>
           </thead>
           <tbody id="empleadosTableBody">
-            <tr><td colspan="7" class="text-center text-muted">Cargando...</td></tr>
+            <tr><td colspan="8" class="text-center text-muted">Cargando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -62,7 +63,7 @@ export async function renderEmployees(root) {
             <h5 class="modal-title" id="empleadoModalLabel">Empleado</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
-          <form id="empleadoForm" class="modal-body py-2">
+          <form id="empleadoForm" class="modal-body py-2" autocomplete="off">
             <input type="hidden" id="empleadoCodigo">
             <div class="mb-2" id="codigoDisplayGroup" style="display:none">
               <label class="form-label">Código</label>
@@ -70,16 +71,15 @@ export async function renderEmployees(root) {
             </div>
             <div class="mb-2">
               <label class="form-label" for="empleadoNombre">Nombre</label>
-              <input type="text" class="form-control form-control-sm" id="empleadoNombre" required>
+              <input type="text" class="form-control form-control-sm" id="empleadoNombre" required autocomplete="off">
             </div>
             <div class="mb-2">
               <label class="form-label" for="empleadoTelefono">Teléfono (8 dígitos)</label>
-              <input type="tel" class="form-control form-control-sm" id="empleadoTelefono" pattern="\\d{8}" maxlength="8" required>
+              <input type="tel" class="form-control form-control-sm" id="empleadoTelefono" pattern="\\d{8}" maxlength="8" required autocomplete="off">
             </div>
             <div class="mb-2">
               <label class="form-label" for="empleadoClave">Clave</label>
-              <input type="text" class="form-control form-control-sm" id="empleadoClave" minlength="1" maxlength="32" placeholder="Clave de acceso">
-              <div class="form-text">Obligatoria al crear. Al editar, déjela en blanco para mantener la actual.</div>
+              <input type="text" class="form-control form-control-sm" id="empleadoClave" minlength="1" maxlength="32" required placeholder="Clave de acceso" autocomplete="off">
             </div>
             <div class="mb-2">
               <label class="form-label" for="empleadoColor">Color</label>
@@ -139,8 +139,7 @@ export async function renderEmployees(root) {
       document.getElementById('empleadoCodigoDisplay').value = empleado.codigo;
       document.getElementById('empleadoNombre').value = empleado.nombre;
       document.getElementById('empleadoTelefono').value = empleado.telefono;
-      document.getElementById('empleadoClave').value = '';
-      document.getElementById('empleadoClave').placeholder = 'Dejar en blanco para no cambiar';
+      document.getElementById('empleadoClave').value = empleado.clave || '';
       const color = empleado.color || '#219FFC';
       colorPicker.value = color;
       colorHex.value = color;
@@ -149,7 +148,7 @@ export async function renderEmployees(root) {
     } else {
       document.getElementById('empleadoModalLabel').textContent = 'Nuevo empleado';
       document.getElementById('empleadoCodigo').value = '';
-      document.getElementById('empleadoClave').placeholder = 'Clave de acceso';
+      document.getElementById('empleadoClave').value = '';
       document.getElementById('empleadoTipo').value = 'TECNICO';
       document.getElementById('empleadoEstado').value = 'ACTIVO';
     }
@@ -161,7 +160,7 @@ export async function renderEmployees(root) {
       const empleados = await api.listEmpleados();
       if (!empleados.length) {
         tableBody.innerHTML =
-          '<tr><td colspan="7" class="text-center text-muted">Sin registros</td></tr>';
+          '<tr><td colspan="8" class="text-center text-muted">Sin registros</td></tr>';
         return;
       }
       const list = empleados;
@@ -172,6 +171,7 @@ export async function renderEmployees(root) {
           <td>${e.codigo}</td>
           <td>${escapeHtml(e.nombre)}</td>
           <td>${escapeHtml(e.telefono)}</td>
+          <td>${escapeHtml(e.clave || '')}</td>
           <td>${colorSwatch(e.color)}</td>
           <td>${tipoBadge(e.tipo)}</td>
           <td>${estadoBadge(e.estado)}</td>
@@ -207,7 +207,7 @@ export async function renderEmployees(root) {
       });
     } catch (err) {
       tableBody.innerHTML =
-        '<tr><td colspan="7" class="text-danger text-center">Error al cargar</td></tr>';
+        '<tr><td colspan="8" class="text-danger text-center">Error al cargar</td></tr>';
       toastError(err.message);
     }
   }
@@ -233,11 +233,11 @@ export async function renderEmployees(root) {
       toastError('El color debe ser un valor hexadecimal válido (#RRGGBB).');
       return;
     }
-    if (!codigo && !clave) {
-      toastError('La clave es obligatoria al crear un empleado.');
+    if (!clave) {
+      toastError('La clave es obligatoria.');
       return;
     }
-    if (clave) body.clave = clave;
+    body.clave = clave;
     try {
       if (codigo) {
         await api.updateEmpleado({ codigo: Number(codigo), ...body });

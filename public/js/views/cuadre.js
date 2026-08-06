@@ -1,5 +1,5 @@
 import * as api from '../api.js';
-import { updateAppShell, bindLogout } from '../components/layout.js';
+import { updateAppShell, bindLogout, refreshObjetivoBadge } from '../components/layout.js';
 import { getEmpleado, isSupervisor } from '../auth.js';
 import { toastSuccess, toastError, toastWarning } from '../alerts.js';
 import { formatDate, formatImporte } from '../format.js';
@@ -702,6 +702,7 @@ export async function renderCuadre(root) {
       toastSuccess('Orden registrada');
       ordenModal.hide();
       await loadCuadre();
+      refreshObjetivoBadge();
     } catch (err) {
       toastError(err.message);
     }

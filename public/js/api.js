@@ -304,4 +304,16 @@ export function deleteTicketPhotosInRange(start, end) {
   return post('/tickets/delete-fotos', { start, end });
 }
 
+export function listObjetivos(mes, anio) {
+  return post('/objetivos/list', { mes, anio });
+}
+
+export function saveObjetivos(body) {
+  return post('/objetivos/save', body);
+}
+
+export function getObjetivoProgreso() {
+  return post('/objetivos/progreso', {});
+}
+
 

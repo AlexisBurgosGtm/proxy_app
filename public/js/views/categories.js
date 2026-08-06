@@ -22,6 +22,13 @@ function mountCategoriasFab() {
   return fab;
 }
 
+function medibleBadge(medible) {
+  if (String(medible).toUpperCase() === 'NO') {
+    return '<span class="badge badge-estado-inactivo">NO</span>';
+  }
+  return '<span class="badge badge-estado-activo">SI</span>';
+}
+
 export async function renderCategories(root) {
   updateAppShell('categorias', 'Categorías');
   root.innerHTML = `
@@ -33,11 +40,12 @@ export async function renderCategories(root) {
             <tr>
               <th>Código</th>
               <th>Descripción</th>
+              <th>Medible</th>
               <th class="text-end">Acciones</th>
             </tr>
           </thead>
           <tbody id="categoriasTableBody">
-            <tr><td colspan="3" class="text-center text-muted">Cargando...</td></tr>
+            <tr><td colspan="4" class="text-center text-muted">Cargando...</td></tr>
           </tbody>
         </table>
       </div>
@@ -58,6 +66,13 @@ export async function renderCategories(root) {
             <div class="mb-2">
               <label class="form-label" for="categoriaDescategoria">Descripción</label>
               <input type="text" class="form-control form-control-sm" id="categoriaDescategoria" maxlength="255" required>
+            </div>
+            <div class="mb-2">
+              <label class="form-label" for="categoriaMedible">Medible</label>
+              <select class="form-select form-select-sm" id="categoriaMedible" required>
+                <option value="SI" selected>SI</option>
+                <option value="NO">NO</option>
+              </select>
             </div>
           </form>
           <div class="modal-footer py-2">
@@ -84,9 +99,12 @@ export async function renderCategories(root) {
       document.getElementById('categoriaCodigo').value = categoria.codcategoria;
       document.getElementById('categoriaCodigoDisplay').value = categoria.codcategoria;
       document.getElementById('categoriaDescategoria').value = categoria.descategoria;
+      document.getElementById('categoriaMedible').value =
+        String(categoria.medible || 'SI').toUpperCase() === 'NO' ? 'NO' : 'SI';
     } else {
       document.getElementById('categoriaModalLabel').textContent = 'Nueva categoría';
       document.getElementById('categoriaCodigo').value = '';
+      document.getElementById('categoriaMedible').value = 'SI';
     }
     modal.show();
   }
@@ -96,7 +114,7 @@ export async function renderCategories(root) {
       list = await api.listCategorias();
       if (!list.length) {
         tableBody.innerHTML =
-          '<tr><td colspan="3" class="text-center text-muted">Sin registros</td></tr>';
+          '<tr><td colspan="4" class="text-center text-muted">Sin registros</td></tr>';
         return;
       }
       tableBody.innerHTML = list
@@ -105,6 +123,7 @@ export async function renderCategories(root) {
         <tr>
           <td>${c.codcategoria}</td>
           <td>${escapeHtml(c.descategoria)}</td>
+          <td>${medibleBadge(c.medible)}</td>
           <td class="text-end">
             <div class="d-grid gap-1 d-md-block">
               <button class="btn btn-outline-primary btn-sm btn-edit" data-codcategoria="${c.codcategoria}">Editar</button>
@@ -137,7 +156,7 @@ export async function renderCategories(root) {
       });
     } catch (err) {
       tableBody.innerHTML =
-        '<tr><td colspan="3" class="text-danger text-center">Error al cargar</td></tr>';
+        '<tr><td colspan="4" class="text-danger text-center">Error al cargar</td></tr>';
       toastError(err.message);
     }
   }
@@ -148,6 +167,7 @@ export async function renderCategories(root) {
     const codcategoria = document.getElementById('categoriaCodigo').value;
     const body = {
       descategoria: document.getElementById('categoriaDescategoria').value.trim(),
+      medible: document.getElementById('categoriaMedible').value,
     };
     try {
       if (codcategoria) {
